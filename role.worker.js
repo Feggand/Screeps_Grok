@@ -6,10 +6,10 @@ module.exports.run = function (creep) {
         creep.memory.working = true;
     }
 
-    let homeRoom = 'W6N1';
+    let homeRoom = creep.memory.homeRoom || 'W6N1'; // Fallback für alte Creeps
     let targetRoom = 'W7N1';
     let room = creep.room;
-    let workers = _.sortBy(_.filter(Game.creeps, c => c.memory.role === 'worker' && c.room.name === homeRoom), 'id');
+    let workers = _.sortBy(_.filter(Game.creeps, c => c.memory.role === 'worker' && (c.memory.homeRoom === homeRoom || c.room.name === homeRoom)), 'id');
 
     if (creep.memory.working) {
         let isPrimaryUpgrader = workers[0].id === creep.id;
@@ -55,7 +55,6 @@ module.exports.run = function (creep) {
             return;
         }
 
-        // Baustellen in W7N1, auch ohne Sicht
         if (Game.rooms[targetRoom]) {
             let remoteConstructionSites = Game.rooms[targetRoom].find(FIND_CONSTRUCTION_SITES);
             if (remoteConstructionSites.length > 0) {
@@ -78,7 +77,6 @@ module.exports.run = function (creep) {
                 return;
             }
         } else if (Memory.rooms[homeRoom] && Memory.rooms[homeRoom].remoteContainersBuilt) {
-            // Keine Sicht, aber Baustellen erwartet
             if (creep.room.name !== targetRoom) {
                 console.log(`${creep.name} in ${room.name}: Bewege nach ${targetRoom} (10,10) für Baustellen (keine Sicht, Memory)`);
                 creep.moveTo(new RoomPosition(10, 10, targetRoom), { visualizePathStyle: { stroke: '#0000ff' } });
@@ -111,20 +109,19 @@ module.exports.run = function (creep) {
             creep.moveTo(new RoomPosition(31, 42, homeRoom), { visualizePathStyle: { stroke: '#00ff00' } });
         }
     } else {
-        if (room.name !== homeRoom) {
-            creep.moveTo(new RoomPosition(31, 42, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
-        } else {
-            let containers = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
-            });
-            if (containers.length) {
-                let fullestContainer = _.max(containers, c => c.store[RESOURCE_ENERGY]);
-                let allFull = containers.every(c => c.store[RESOURCE_ENERGY] === c.store.getCapacity(RESOURCE_ENERGY));
-                let targetContainer = allFull ? creep.pos.findClosestByPath(containers) : fullestContainer;
-                if (creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
-                }
+        // Energie holen aus aktuellem Raum, nicht nur homeRoom
+        let containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+        });
+        if (containers.length) {
+            let fullestContainer = _.max(containers, c => c.store[RESOURCE_ENERGY]);
+            let allFull = containers.every(c => c.store[RESOURCE_ENERGY] === c.store.getCapacity(RESOURCE_ENERGY));
+            let targetContainer = allFull ? creep.pos.findClosestByPath(containers) : fullestContainer;
+            if (creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
             }
+        } else if (room.name !== homeRoom) {
+            creep.moveTo(new RoomPosition(31, 42, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
         }
     }
 };
