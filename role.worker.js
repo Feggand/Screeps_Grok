@@ -20,9 +20,15 @@ module.exports.run = function (creep) {
         if (isPrimaryUpgrader) {
             if (room.name === homeRoom) {
                 creep.memory.task = 'upgrade';
-                if (creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
+                let result = creep.upgradeController(room.controller);
+                if (result === ERR_NOT_IN_RANGE) {
                     creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
                     console.log(`${creep.name}: Moving to controller in ${homeRoom}`);
+                } else if (result !== OK) {
+                    console.log(`${creep.name}: Upgrade failed with ${result}, moving to controller`);
+                    creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
+                } else {
+                    console.log(`${creep.name}: Upgrading controller`);
                 }
             } else {
                 creep.moveTo(new RoomPosition(31, 42, homeRoom), { visualizePathStyle: { stroke: '#00ff00' } });
@@ -46,15 +52,27 @@ module.exports.run = function (creep) {
                     let target = creep.pos.findClosestByPath(damagedStructures);
                     creep.memory.task = 'repair';
                     creep.memory.targetId = target.id;
-                    if (creep.repair(target) === ERR_NOT_IN_RANGE) {
+                    let result = creep.repair(target);
+                    if (result === ERR_NOT_IN_RANGE) {
                         creep.moveTo(target, { visualizePathStyle: { stroke: '#ff0000' } });
                         console.log(`${creep.name}: Moving to repair ${target.structureType} at ${target.pos}`);
+                    } else if (result !== OK) {
+                        console.log(`${creep.name}: Repair failed with ${result}, moving to ${target.pos}`);
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ff0000' } });
+                    } else {
+                        console.log(`${creep.name}: Repairing ${target.structureType} at ${target.pos}`);
                     }
                 } else {
                     creep.memory.task = 'upgrade';
-                    if (creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
+                    let result = creep.upgradeController(room.controller);
+                    if (result === ERR_NOT_IN_RANGE) {
                         creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
                         console.log(`${creep.name}: Moving to controller for upgrade`);
+                    } else if (result !== OK) {
+                        console.log(`${creep.name}: Upgrade failed with ${result}, moving to controller`);
+                        creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
+                    } else {
+                        console.log(`${creep.name}: Upgrading controller`);
                     }
                 }
             } else {
@@ -99,22 +117,40 @@ module.exports.run = function (creep) {
                 let target = creep.pos.findClosestByPath(constructionSites);
                 if (target) {
                     creep.memory.task = 'build';
-                    if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                    let result = creep.build(target);
+                    if (result === ERR_NOT_IN_RANGE) {
                         creep.moveTo(target, { visualizePathStyle: { stroke: '#0000ff' } });
                         console.log(`${creep.name}: Moving to build ${target.structureType} at ${target.pos}`);
+                    } else if (result !== OK) {
+                        console.log(`${creep.name}: Build failed with ${result}, moving to ${target.pos}`);
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#0000ff' } });
+                    } else {
+                        console.log(`${creep.name}: Building ${target.structureType} at ${target.pos}`);
                     }
                 } else {
                     creep.memory.task = 'upgrade';
-                    if (creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
+                    let result = creep.upgradeController(room.controller);
+                    if (result === ERR_NOT_IN_RANGE) {
                         creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
                         console.log(`${creep.name}: Moving to controller for upgrade`);
+                    } else if (result !== OK) {
+                        console.log(`${creep.name}: Upgrade failed with ${result}, moving to controller`);
+                        creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
+                    } else {
+                        console.log(`${creep.name}: Upgrading controller`);
                     }
                 }
             } else {
                 creep.memory.task = 'upgrade';
-                if (creep.upgradeController(room.controller) === ERR_NOT_IN_RANGE) {
+                let result = creep.upgradeController(room.controller);
+                if (result === ERR_NOT_IN_RANGE) {
                     creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
                     console.log(`${creep.name}: Moving to controller for upgrade`);
+                } else if (result !== OK) {
+                    console.log(`${creep.name}: Upgrade failed with ${result}, moving to controller`);
+                    creep.moveTo(room.controller, { visualizePathStyle: { stroke: '#00ff00' } });
+                } else {
+                    console.log(`${creep.name}: Upgrading controller`);
                 }
             }
         } else {
@@ -131,6 +167,8 @@ module.exports.run = function (creep) {
             if (creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
                 console.log(`${creep.name}: Moving to container at ${targetContainer.pos} in ${room.name}`);
+            } else {
+                console.log(`${creep.name}: Withdrawing from container at ${targetContainer.pos}`);
             }
         } else if (room.name !== homeRoom) {
             creep.moveTo(new RoomPosition(31, 42, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
