@@ -1,5 +1,5 @@
 module.exports = {
-    spawn: function(spawn, role, targetRoom) {
+    spawn: function(spawn, role, targetRoom, homeRoom) {
         let energyAvailable = spawn.room.energyAvailable;
         let body = [];
 
@@ -43,7 +43,7 @@ module.exports = {
                 body = [WORK, CARRY, MOVE];
             }
         } else if (role === 'scout') {
-            body = [MOVE]; // Minimaler Scout, kostet 50 Energie
+            body = [MOVE];
         }
 
         let name = role + Game.time;
@@ -69,19 +69,21 @@ module.exports = {
             }
             memory.source = targetSource.id;
         } else if (role === 'remoteHarvester') {
-            memory.targetRoom = 'W7N1';
-            if (!Memory.remoteContainers || !Memory.remoteContainers['W7N1']) {
+            memory.targetRoom = targetRoom || 'W7N1';
+            memory.homeRoom = homeRoom || spawn.room.name; // Speichere den Hauptraum
+            if (!Memory.remoteContainers || !Memory.remoteContainers[memory.targetRoom]) {
                 Memory.remoteContainers = Memory.remoteContainers || {};
-                Memory.remoteContainers['W7N1'] = [];
+                Memory.remoteContainers[memory.targetRoom] = [];
             }
-            let remoteContainers = Memory.remoteContainers['W7N1'];
+            let remoteContainers = Memory.remoteContainers[memory.targetRoom];
             let assignedContainer = remoteContainers.find(c => !c.assignedHarvester);
             if (assignedContainer) {
                 memory.containerId = assignedContainer.id;
                 assignedContainer.assignedHarvester = name;
             }
         } else if (role === 'scout') {
-            memory.targetRoom = targetRoom || 'W7N1'; // Dynamisches Ziel
+            memory.targetRoom = targetRoom || 'W7N1';
+            memory.homeRoom = homeRoom || spawn.room.name;
         }
 
         spawn.spawnCreep(body, name, { memory: memory });

@@ -1,8 +1,10 @@
 var creepManager = require('creepManager');
 var roomManager = require('roomManager');
+var memoryManager = require('memoryManager');
 
 module.exports.loop = function () {
-    if (!Memory.rooms) Memory.rooms = {};
+    // Memory initialisieren/aktualisieren
+    memoryManager.initializeMemory();
 
     if (Game.time % 100 === 0) {
         for (let name in Memory.creeps) {
@@ -12,15 +14,15 @@ module.exports.loop = function () {
         }
     }
 
+    // Verwalte alle gesichteten Räume
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
-        if (room.controller && room.controller.my) {
-            roomManager.manageRoom(room);
-        }
+        roomManager.manageRoom(room);
     }
 
     creepManager.runCreeps();
 
+    // Türme nur in Haupträumen
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
         if (room.controller && room.controller.my) {
