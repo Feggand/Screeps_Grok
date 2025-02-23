@@ -1,7 +1,7 @@
 module.exports.loop = function () {
     if (!Memory.rooms) Memory.rooms = {};
 
-    if (Game.time % 10 === 0) {
+    if (Game.time % 100 === 0) {
         for (let name in Memory.creeps) {
             if (!Game.creeps[name]) {
                 delete Memory.creeps[name];
@@ -37,7 +37,7 @@ function manageRoom(room) {
     }
 
     let sources = room.find(FIND_SOURCES).length;
-    let energyCapacity = room.energyCapacityAvailable;
+    //let energyCapacity = room.energyCapacityAvailable;
     let minHarvesters = sources;
 
     let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
