@@ -17,7 +17,11 @@ module.exports.loop = function () {
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
         console.log(`Managing room: ${roomName}, isMyRoom: ${Memory.rooms[roomName]?.isMyRoom}`);
-        roomManager.manageRoom(room);
+        if (roomManager && typeof roomManager.manageRoom === 'function') {
+            roomManager.manageRoom(room);
+        } else {
+            console.log(`Error: roomManager or manageRoom not defined for ${roomName}`);
+        }
     }
 
     creepManager.runCreeps();
