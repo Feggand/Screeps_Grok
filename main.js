@@ -2,7 +2,7 @@ var creepManager = require('creepManager');
 var roomManager = require('roomManager');
 var memoryManager = require('memoryManager');
 
-console.log('roomManager loaded:', roomManager); // Prüfe, ob roomManager geladen wird
+console.log('roomManager loaded:', roomManager);
 
 module.exports.loop = function () {
     console.log('Main loop running');
@@ -11,7 +11,8 @@ module.exports.loop = function () {
 
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
-        console.log(`Room: ${roomName}`);
+        let isMyRoom = Memory.rooms[roomName] && Memory.rooms[roomName].isMyRoom ? Memory.rooms[roomName].isMyRoom : false;
+        console.log(`Room: ${roomName}, isMyRoom: ${isMyRoom}`);
         if (roomManager && typeof roomManager.manageRoom === 'function') {
             console.log(`Calling manageRoom for ${roomName}`);
             roomManager.manageRoom(room);
