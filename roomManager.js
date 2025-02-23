@@ -30,11 +30,21 @@ module.exports = {
                 }
             }
             if (!roomMemory.remoteRooms.includes(targetRoom)) {
-                roomMemory.remoteRooms.push(targetRoom); // W7N1 als Remote-Raum hinzufügen
+                roomMemory.remoteRooms.push(targetRoom);
             }
 
             let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
             let towerSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
+
+            // Creep-Zählung basierend auf homeRoom
+            let creeps = _.filter(Game.creeps, (c) => c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name));
+            let harvesters = _.countBy(creeps, 'memory.role').harvester || 0;
+            let haulers = _.countBy(creeps, 'memory.role').hauler || 0;
+            let workers = _.countBy(creeps, 'memory.role').worker || 0;
+            let remoteHarvesters = _.filter(Game.creeps, c => c.memory.role === 'remoteHarvester' && c.memory.homeRoom === room.name).length;
+
+            // Debug-Logs
+            console.log(`Room ${room.name}: Harvesters=${harvesters}/${roomMemory.minHarvesters}, Haulers=${haulers}/${roomMemory.minHaulers}, Workers=${workers}/${roomMemory.minWorkers}, RemoteHarvesters=${remoteHarvesters}/${roomMemory.minRemoteHarvesters}, Energy=${room.energyAvailable}`);
 
             // Scout- und RemoteHarvester-Logik für alle Remote-Räume
             let spawn = room.find(FIND_MY_SPAWNS)[0];
@@ -43,8 +53,28 @@ module.exports = {
                     let remoteRoomMemory = Memory.rooms[remoteRoomName];
                     let scouts = _.filter(Game.creeps, c => c.memory.role === 'scout' && c.memory.targetRoom === remoteRoomName);
                     if (remoteRoomMemory.needsScout && (scouts.length === 0 || (scouts.length === 1 && scouts[0].ticksToLive < 60))) {
-                        spawnCreeps.spawn(spawn, 'scout', remoteRoomName);
+                        spawnCreeps.spawn(spawn, 'scout', remoteRoomName, room.name);
                     }
+                }
+            }
+
+            if (spawn && !spawn.spawning && room.energyAvailable >= 200) {
+                let harvestersList = _.filter(Game.creeps, c => c.memory.role === 'harvester' && (c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name)));
+                let dyingHarvester = harvestersList.find(h => h.ticksToLive < 30);
+                // Priorität: Harvester > Worker > RemoteHarvester > Hauler
+                if (harvesters < roomMemory.minHarvesters && (dyingHarvester || harvesters < roomMemory.minHarvesters) && !roomMemory.harvesterSpawnedThisTick) {
+                    spawnCreeps.spawn(spawn, 'harvester', null, room.name);
+                    roomMemory.harvesterSpawnedThisTick = true;
+                    console.log(`Spawning Harvester in ${room.name}`);
+                } else if (workers < roomMemory.minWorkers) {
+                    spawnCreeps.spawn(spawn, 'worker', null, room.name);
+                    console.log(`Spawning Worker in ${room.name}`);
+                } else if (remoteHarvesters < roomMemory.minRemoteHarvesters) {
+                    spawnCreeps.spawn(spawn, 'remoteHarvester', null, room.name);
+                    console.log(`Spawning RemoteHarvester in ${room.name}`);
+                } else if (haulers < roomMemory.minHaulers) {
+                    spawnCreeps.spawn(spawn, 'hauler', null, room.name);
+                    console.log(`Spawning Hauler in ${room.name}`);
                 }
             }
 
@@ -251,30 +281,9 @@ module.exports = {
                 });
             }
 
-            let creeps = _.filter(Game.creeps, (c) => c.room.name === room.name);
-            let harvesters = _.countBy(creeps, 'memory.role').harvester || 0;
-            let haulers = _.countBy(creeps, 'memory.role').hauler || 0;
-            let workers = _.countBy(creeps, 'memory.role').worker || 0;
-            let remoteHarvesters = _.filter(Game.creeps, c => c.memory.role === 'remoteHarvester' && c.memory.homeRoom === room.name).length;
-
-            if (spawn && !spawn.spawning && room.energyAvailable >= 200) {
-                let harvestersList = _.filter(Game.creeps, c => c.memory.role === 'harvester' && c.room.name === room.name);
-                let dyingHarvester = harvestersList.find(h => h.ticksToLive < 30);
-                if (haulers < roomMemory.minHaulers) {
-                    spawnCreeps.spawn(spawn, 'hauler');
-                } else if (harvesters < roomMemory.minHarvesters && (dyingHarvester || harvesters < roomMemory.minHarvesters) && !roomMemory.harvesterSpawnedThisTick) {
-                    spawnCreeps.spawn(spawn, 'harvester');
-                    roomMemory.harvesterSpawnedThisTick = true;
-                } else if (remoteHarvesters < roomMemory.minRemoteHarvesters) {
-                    spawnCreeps.spawn(spawn, 'remoteHarvester', null, room.name);
-                } else if (workers < roomMemory.minWorkers) {
-                    spawnCreeps.spawn(spawn, 'worker');
-                }
-            }
-
             roomMemory.harvesterSpawnedThisTick = false;
         } else {
-            // Remote-Raum-Management (z. B. Container-Bau überwachen)
+            // Remote-Raum-Management
             if (Game.time % 10 === 0 && roomMemory.needsHarvesters && roomMemory.containers < roomMemory.sources && room.energyAvailable >= 50) {
                 let sources = room.find(FIND_SOURCES);
                 sources.forEach(source => {
