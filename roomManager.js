@@ -61,22 +61,23 @@ module.exports = {
                 }
             }
 
-            if (spawn && !spawn.spawning && room.energyAvailable >= 200) {
+            if (spawn && !spawn.spawning) {
+                let minEnergy = room.energyAvailable >= 200 ? 200 : room.energyAvailable;
                 let harvestersList = _.filter(Game.creeps, c => c.memory.role === 'harvester' && (c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name)));
                 let dyingHarvester = harvestersList.find(h => h.ticksToLive < 30);
-                if (harvesters < roomMemory.minHarvesters && (dyingHarvester || harvesters < roomMemory.minHarvesters) && !roomMemory.harvesterSpawnedThisTick) {
+                if (harvesters < roomMemory.minHarvesters && (dyingHarvester || harvesters < roomMemory.minHarvesters) && !roomMemory.harvesterSpawnedThisTick && room.energyAvailable >= 150) {
                     spawnCreeps.spawn(spawn, 'harvester', null, room.name);
                     roomMemory.harvesterSpawnedThisTick = true;
                     console.log(`Spawning Harvester in ${room.name}`);
-                } else if (workers < roomMemory.minWorkers) {
-                    spawnCreeps.spawn(spawn, 'worker', null, room.name);
-                    console.log(`Spawning Worker in ${room.name}`);
-                } else if (remoteHarvesters < roomMemory.minRemoteHarvesters) {
-                    spawnCreeps.spawn(spawn, 'remoteHarvester', null, room.name);
-                    console.log(`Spawning RemoteHarvester in ${room.name}`);
-                } else if (haulers < roomMemory.minHaulers) {
+                } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 100) {
                     spawnCreeps.spawn(spawn, 'hauler', null, room.name);
                     console.log(`Spawning Hauler in ${room.name}`);
+                } else if (workers < roomMemory.minWorkers && room.energyAvailable >= 150) {
+                    spawnCreeps.spawn(spawn, 'worker', null, room.name);
+                    console.log(`Spawning Worker in ${room.name}`);
+                } else if (remoteHarvesters < roomMemory.minRemoteHarvesters && room.energyAvailable >= 150) {
+                    spawnCreeps.spawn(spawn, 'remoteHarvester', null, room.name);
+                    console.log(`Spawning RemoteHarvester in ${room.name}`);
                 }
             }
 

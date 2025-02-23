@@ -8,11 +8,11 @@ module.exports.loop = function () {
     console.log('Main loop running');
     memoryManager.initializeMemory();
     console.log('Memory initialized');
+    console.log('Memory.rooms[W6N1]:', JSON.stringify(Memory.rooms['W6N1']));
 
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
-        let isMyRoom = Memory.rooms[roomName] && Memory.rooms[roomName].isMyRoom ? Memory.rooms[roomName].isMyRoom : false;
-        console.log(`Room: ${roomName}, isMyRoom: ${isMyRoom}`);
+        console.log(`Room: ${roomName}, isMyRoom: ${Memory.rooms[roomName].isMyRoom}`);
         if (roomManager && typeof roomManager.manageRoom === 'function') {
             console.log(`Calling manageRoom for ${roomName}`);
             roomManager.manageRoom(room);
