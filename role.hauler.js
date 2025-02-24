@@ -48,6 +48,59 @@ module.exports.run = function (creep) {
             }
             return;
         }
+
+        // Fallback für Hauler mit voller Energie: Überwache lokale Container und suche nach Ressourcen
+        console.log(`${creep.name}: No structures need energy, checking local tasks in ${homeRoom}`);
+        if (room.name === homeRoom) {
+            // Priorität 3: Überprüfe Container für zukünftige Energie (selbst wenn leer)
+            let containers = room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            });
+            if (containers.length) {
+                let targetContainer = creep.memory.containerId ? Game.getObjectById(creep.memory.containerId) : null;
+                if (!targetContainer) {
+                    targetContainer = creep.pos.findClosestByPath(containers);
+                    creep.memory.containerId = targetContainer.id;
+                    console.log(`${creep.name}: Monitoring container ${targetContainer.id} in ${room.name}`);
+                }
+                creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
+                console.log(`${creep.name}: Moving to monitor container ${targetContainer.id} in ${room.name} for energy`);
+                return;
+            }
+
+            // Priorität 4: Fallengelassene Energie aufheben
+            let droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
+                filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
+            });
+            if (droppedEnergy && creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' } });
+                    console.log(`${creep.name}: Picking up dropped energy at ${droppedEnergy.pos}`);
+                }
+                return;
+            }
+
+            // Priorität 5: Tombstones leeren
+            let tombstone = creep.pos.findClosestByPath(FIND_TOMBSTONES, {
+                filter: t => t.store[RESOURCE_ENERGY] > 0
+            });
+            if (tombstone && creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
+                if (creep.withdraw(tombstone, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(tombstone, { visualizePathStyle: { stroke: '#ffaa00' } });
+                    console.log(`${creep.name}: Withdrawing energy from tombstone at ${tombstone.pos}`);
+                }
+                return;
+            }
+
+            // Letzter Fallback: Bewege dich zum Spawn, um in der Nähe von potenziellen Zielen zu bleiben
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                console.log(`${creep.name}: No tasks, moving to spawn in ${homeRoom}`);
+            } else {
+                console.log(`${creep.name}: No spawn or tasks found in ${homeRoom}, waiting`);
+            }
+        }
     } else {
         // Prüfe, ob der Hauler in homeRoom ist oder zurückgekehrt ist
         if (room.name === homeRoom) {
@@ -96,13 +149,13 @@ module.exports.run = function (creep) {
                 return;
             }
 
-            // Letzter Fallback: Zur nächsten Quelle bewegen, um sinnvoll zu bleiben
-            let source = creep.pos.findClosestByPath(FIND_SOURCES);
-            if (source) {
-                creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
-                console.log(`${creep.name}: No tasks, moving to nearest source in ${homeRoom}`);
+            // Letzter Fallback: Bewege dich zum Spawn, um in der Nähe von potenziellen Zielen zu bleiben
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                console.log(`${creep.name}: No tasks, moving to spawn in ${homeRoom}`);
             } else {
-                console.log(`${creep.name}: No sources or tasks found in ${homeRoom}, waiting`);
+                console.log(`${creep.name}: No spawn or tasks found in ${homeRoom}, waiting`);
             }
         } else {
             // Priorität 1: Fallengelassene Energie aufheben (im aktuellen Raum)
