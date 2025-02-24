@@ -122,7 +122,7 @@ module.exports = {
                         let spawn = room.find(FIND_MY_SPAWNS)[0];
                         if (spawn) {
                             // Manuelle Position (du musst die Koordinaten anpassen)
-                            let manualStoragePos = roomMemory.manualStoragePos || { x: 28, y: 41 }; // Beispielposition, passe sie an deine Karte an
+                            let manualStoragePos = roomMemory.manualStoragePos || { x: 28, y: 42 }; // Beispielposition, passe sie an deine Karte an
                             let terrain = room.lookForAt(LOOK_TERRAIN, manualStoragePos.x, manualStoragePos.y)[0];
                             let structures = room.lookForAt(LOOK_STRUCTURES, manualStoragePos.x, manualStoragePos.y);
                             let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, manualStoragePos.x, manualStoragePos.y);
