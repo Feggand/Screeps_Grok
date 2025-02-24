@@ -67,7 +67,7 @@ module.exports.run = function (creep) {
             // Priorität 4: Fallengelassene Energie aufheben
             let droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
                 filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
-            });
+            }, { avoidCreeps: true });
             if (droppedEnergy && creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                 if (creep.pickup(droppedEnergy) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(droppedEnergy, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
@@ -79,7 +79,7 @@ module.exports.run = function (creep) {
             // Priorität 5: Tombstones leeren
             let tombstone = creep.pos.findClosestByPath(FIND_TOMBSTONES, {
                 filter: t => t.store[RESOURCE_ENERGY] > 0
-            });
+            }, { avoidCreeps: true });
             if (tombstone && creep.store.getFreeCapacity(RESOURCE_ENERGY) > 0) {
                 if (creep.withdraw(tombstone, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(tombstone, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
@@ -88,7 +88,7 @@ module.exports.run = function (creep) {
                 return;
             }
 
-            // Priorität 6: Überprüfe Container nur, wenn Energie vorhanden ist, sonst zum Spawn
+            // Priorität 6: Überprüfe Container nur, wenn Energie vorhanden ist und kein Worker blockiert
             let containers = room.find(FIND_STRUCTURES, {
                 filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
             });
@@ -96,13 +96,31 @@ module.exports.run = function (creep) {
                 let targetContainer = creep.memory.containerId ? Game.getObjectById(creep.memory.containerId) : null;
                 if (!targetContainer || targetContainer.store[RESOURCE_ENERGY] === 0) {
                     console.log(`${creep.name}: Checking containers in ${homeRoom}, found ${containers.length} with energy`);
-                    targetContainer = _.max(containers, c => c.store[RESOURCE_ENERGY]);
-                    creep.memory.containerId = targetContainer.id;
-                    console.log(`${creep.name}: Assigned to container ${targetContainer.id} in ${room.name}`);
+                    // Prüfe, ob ein Worker in der Nähe des Containers ist, bevor der Hauler dorthin geht
+                    let nearbyWorkers = targetContainer ? targetContainer.pos.findInRange(FIND_MY_CREEPS, 1, {
+                        filter: c => c.memory.role === 'worker' && c.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    }) : [];
+                    if (nearbyWorkers.length === 0) {
+                        targetContainer = _.max(containers, c => c.store[RESOURCE_ENERGY]);
+                        creep.memory.containerId = targetContainer.id;
+                        console.log(`${creep.name}: Assigned to container ${targetContainer.id} in ${room.name}, no workers nearby`);
+                    } else {
+                        console.log(`${creep.name}: Container ${targetContainer.id} blocked by workers, skipping`);
+                        targetContainer = null; // Container überspringen, wenn Workers blockiert sind
+                    }
                 }
-                if (creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                if (targetContainer && creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
                     console.log(`${creep.name}: Moving to container ${targetContainer.id} in ${room.name} for energy, avoiding creeps`);
+                } else if (!targetContainer) {
+                    // Wenn kein Container verfügbar ist, bewege dich zum Spawn
+                    let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, { avoidCreeps: true });
+                    if (spawn) {
+                        creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
+                        console.log(`${creep.name}: No usable containers, moving to spawn in ${homeRoom}, avoiding creeps`);
+                    } else {
+                        console.log(`${creep.name}: No spawn or containers available in ${homeRoom}, waiting`);
+                    }
                 }
                 return;
             }
@@ -145,7 +163,7 @@ module.exports.run = function (creep) {
                 return;
             }
 
-            // Priorität 3: Lokale Container leeren
+            // Priorität 3: Lokale Container leeren, wenn kein Worker blockiert
             let containers = room.find(FIND_STRUCTURES, {
                 filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
             });
@@ -169,6 +187,15 @@ module.exports.run = function (creep) {
                 if (targetContainer && creep.withdraw(targetContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
                     console.log(`${creep.name}: Moving to container ${targetContainer.id} in ${room.name} for energy, avoiding creeps`);
+                } else if (!targetContainer) {
+                    // Wenn kein Container verfügbar ist, bewege dich zum Spawn
+                    let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, { avoidCreeps: true });
+                    if (spawn) {
+                        creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
+                        console.log(`${creep.name}: No usable containers, moving to spawn in ${homeRoom}, avoiding creeps`);
+                    } else {
+                        console.log(`${creep.name}: No spawn or containers available in ${homeRoom}, waiting`);
+                    }
                 }
                 return;
             }
