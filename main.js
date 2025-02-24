@@ -24,7 +24,8 @@ module.exports.loop = function () {
 
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
-        console.log(`Room: ${roomName}, isMyRoom: ${Memory.rooms[roomName]?.isMyRoom || 'undefined'}`);
+        let isMyRoom = Memory.rooms[roomName] && Memory.rooms[roomName].isMyRoom ? Memory.rooms[roomName].isMyRoom : 'undefined';
+        console.log(`Room: ${roomName}, isMyRoom: ${isMyRoom}`);
         if (roomManager && typeof roomManager.manageRoom === 'function') {
             console.log(`Calling manageRoom for ${roomName}`);
             roomManager.manageRoom(room);
