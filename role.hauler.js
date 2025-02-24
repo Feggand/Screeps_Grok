@@ -1,4 +1,11 @@
 module.exports.run = function (creep) {
+    // Entferne task und targetId, falls sie von Worker-Logik stammen
+    if (creep.memory.task || creep.memory.targetId) {
+        console.log(`${creep.name}: Clearing worker-specific memory (task, targetId)`);
+        delete creep.memory.task;
+        delete creep.memory.targetId;
+    }
+
     if (creep.store[RESOURCE_ENERGY] === 0) {
         creep.memory.working = false;
     } else if (creep.store.getFreeCapacity() === 0) {
@@ -57,7 +64,6 @@ module.exports.run = function (creep) {
             return;
         }
     } else {
-        // Container in W7N1 leeren
         let targetRoom = 'W7N1';
         if (Game.rooms[targetRoom]) {
             let remoteContainers = Game.rooms[targetRoom].find(FIND_STRUCTURES, {
@@ -74,7 +80,6 @@ module.exports.run = function (creep) {
             }
         }
 
-        // Lokale Container als Fallback
         let containers = creep.room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
         });

@@ -43,7 +43,7 @@ module.exports = {
                 body = [WORK, CARRY, MOVE];
             }
         } else if (role === 'scout') {
-            body = [MOVE];
+            body = [MOVE]; // Minimaler Scout, kostet 50 Energie
         }
 
         let name = role + Game.time;
@@ -70,7 +70,7 @@ module.exports = {
             memory.source = targetSource.id;
         } else if (role === 'remoteHarvester') {
             memory.targetRoom = targetRoom || 'W7N1';
-            memory.homeRoom = homeRoom || spawn.room.name; // Speichere den Hauptraum
+            memory.homeRoom = homeRoom || spawn.room.name;
             if (!Memory.remoteContainers || !Memory.remoteContainers[memory.targetRoom]) {
                 Memory.remoteContainers = Memory.remoteContainers || {};
                 Memory.remoteContainers[memory.targetRoom] = [];
@@ -82,7 +82,7 @@ module.exports = {
                 assignedContainer.assignedHarvester = name;
             }
         } else if (role === 'scout') {
-            memory.targetRoom = targetRoom || 'W7N1';
+            memory.targetRoom = targetRoom || 'W7N1'; // Immer ein Ziel setzen
             memory.homeRoom = homeRoom || spawn.room.name;
         }
 
