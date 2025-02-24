@@ -1,7 +1,10 @@
+var logger = require('logger');
+
 module.exports.run = function (tower) {
     let closestHostile = tower.pos.findClosestByRange(FIND_HOSTILE_CREEPS);
     if (closestHostile) {
         tower.attack(closestHostile);
+        logger.info(`Tower ${tower.id} attacking hostile ${closestHostile.id}`);
         return;
     }
 
@@ -10,6 +13,7 @@ module.exports.run = function (tower) {
     });
     if (closestDamagedCreep) {
         tower.heal(closestDamagedCreep);
+        logger.info(`Tower ${tower.id} healing creep ${closestDamagedCreep.name}`);
         return;
     }
 
@@ -21,6 +25,6 @@ module.exports.run = function (tower) {
     });
     if (closestDamagedStructure) {
         tower.repair(closestDamagedStructure);
-        return;
+        logger.info(`Tower ${tower.id} repairing ${closestDamagedStructure.structureType} at ${closestDamagedStructure.pos}`);
     }
 };

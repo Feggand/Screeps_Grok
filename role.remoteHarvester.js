@@ -1,20 +1,31 @@
+var logger = require('logger');
+
 module.exports.run = function (creep) {
-    if (creep.room.name !== creep.memory.targetRoom) {
-        creep.moveTo(new RoomPosition(26, 25, creep.memory.targetRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
+    let targetRoom = creep.memory.targetRoom;
+    if (!targetRoom) {
+        logger.warn(`${creep.name}: No targetRoom, skipping`);
+        return;
+    }
+
+    if (creep.room.name !== targetRoom) {
+        creep.moveTo(new RoomPosition(26, 25, targetRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
         return;
     }
 
     if (!creep.memory.containerId) {
         let containers = creep.room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
         if (containers.length) {
-            let freeContainer = containers.find(c => !Memory.remoteContainers[creep.memory.targetRoom].some(rc => rc.id === c.id && rc.assignedHarvester));
+            let freeContainer = containers.find(c => !Memory.remoteContainers[targetRoom]?.some(rc => rc.id === c.id && rc.assignedHarvester));
             if (freeContainer) {
                 creep.memory.containerId = freeContainer.id;
-                if (!Memory.remoteContainers[creep.memory.targetRoom].some(rc => rc.id === freeContainer.id)) {
-                    Memory.remoteContainers[creep.memory.targetRoom].push({ id: freeContainer.id, assignedHarvester: creep.name });
+                if (!Memory.remoteContainers[targetRoom]) Memory.remoteContainers[targetRoom] = [];
+                let existing = Memory.remoteContainers[targetRoom].find(rc => rc.id === freeContainer.id);
+                if (!existing) {
+                    Memory.remoteContainers[targetRoom].push({ id: freeContainer.id, assignedHarvester: creep.name });
                 } else {
-                    Memory.remoteContainers[creep.memory.targetRoom].find(rc => rc.id === freeContainer.id).assignedHarvester = creep.name;
+                    existing.assignedHarvester = creep.name;
                 }
+                logger.info(`${creep.name}: Assigned to container ${freeContainer.id}`);
             }
         }
         return;
@@ -22,6 +33,10 @@ module.exports.run = function (creep) {
 
     if (creep.store.getFreeCapacity() > 0) {
         let source = creep.pos.findClosestByRange(FIND_SOURCES);
+        if (!source) {
+            logger.warn(`${creep.name}: No source found in ${targetRoom}`);
+            return;
+        }
         if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
             creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
         }
@@ -33,6 +48,7 @@ module.exports.run = function (creep) {
             }
         } else {
             creep.drop(RESOURCE_ENERGY);
+            logger.warn(`${creep.name}: Container ${creep.memory.containerId} not found, dropping energy`);
         }
     }
 };

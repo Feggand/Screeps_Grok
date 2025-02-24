@@ -1,23 +1,25 @@
+var logger = require('logger');
+
 module.exports = {
     runCreeps: function() {
         for (let name in Game.creeps) {
             let creep = Game.creeps[name];
             let role = creep.memory.role;
             if (!role || typeof role !== 'string' || role === 'undefined') {
-                console.log(`Invalid or undefined role for creep ${name}, determining role from body or spawn logic`);
-                // Versuche, die Rolle aus dem Körper oder der Spawn-Logik zu ermitteln
+                logger.warn(`Invalid or undefined role for creep ${name}, determining role from body`);
                 if (this.determineRole(creep)) {
                     role = creep.memory.role;
                 } else {
-                    creep.memory.role = 'worker'; // Letzter Fallback
-                    role = 'worker';
+                    creep.memory.role = this.getFallbackRole(creep);
+                    role = creep.memory.role;
+                    logger.info(`Assigned fallback role ${role} to creep ${name}`);
                 }
             }
             try {
                 let roleModule = require('role.' + role);
                 roleModule.run(creep);
             } catch (error) {
-                console.log(`Error running role ${role} for creep ${name}: ${error.message}`);
+                logger.error(`Error running role ${role} for creep ${name}: ${error.message}`);
             }
         }
     },
@@ -48,6 +50,10 @@ module.exports = {
             creep.memory.role = 'remoteHarvester';
             return true;
         }
-        return false; // Rolle konnte nicht bestimmt werden
+        return false;
+    },
+
+    getFallbackRole: function(creep) {
+        return 'worker'; // Kann später dynamischer gemacht werden
     }
 };

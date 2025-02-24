@@ -1,0 +1,221 @@
+var logger = require('logger');
+
+module.exports = {
+    buildStructures: function(room) {
+        let roomMemory = Memory.rooms[room.name] || {};
+        if (!roomMemory.isMyRoom) {
+            this.buildRemoteStructures(room);
+            return;
+        }
+
+        let spawn = room.find(FIND_MY_SPAWNS)[0];
+        if (!spawn) return;
+
+        if (room.controller.level >= 2) {
+            this.buildExtensions(room, spawn);
+            this.buildContainers(room);
+            this.buildRoads(room, spawn);
+        }
+        if (room.controller.level >= 3) {
+            this.buildTowers(room, spawn);
+            this.buildRemoteContainers(room);
+            this.buildDefenses(room, spawn);
+        }
+        if (room.controller.level >= 4) {
+            this.buildStorage(room, spawn);
+        }
+    },
+
+    buildExtensions: function(room, spawn) {
+        let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
+        let extensionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
+        let maxExtensions = room.controller.level === 2 ? 5 : room.controller.level === 3 ? 10 : 20;
+
+        logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);
+        if (extensions + extensionSites < maxExtensions && room.energyAvailable >= 50) {
+            let positions = [
+                // Neue Positionen, weiter vom Spawn entfernt
+                { x: spawn.pos.x - 5, y: spawn.pos.y - 5 }, { x: spawn.pos.x + 5, y: spawn.pos.y - 5 },
+                { x: spawn.pos.x - 5, y: spawn.pos.y + 5 }, { x: spawn.pos.x + 5, y: spawn.pos.y + 5 },
+                { x: spawn.pos.x - 6, y: spawn.pos.y }, { x: spawn.pos.x + 6, y: spawn.pos.y },
+                { x: spawn.pos.x, y: spawn.pos.y - 6 }, { x: spawn.pos.x, y: spawn.pos.y + 6 },
+                { x: spawn.pos.x - 4, y: spawn.pos.y - 4 }, { x: spawn.pos.x + 4, y: spawn.pos.y - 4 },
+                { x: spawn.pos.x - 4, y: spawn.pos.y + 4 }, { x: spawn.pos.x + 4, y: spawn.pos.y + 4 },
+                { x: spawn.pos.x - 5, y: spawn.pos.y }, { x: spawn.pos.x + 5, y: spawn.pos.y },
+                { x: spawn.pos.x, y: spawn.pos.y - 5 }, { x: spawn.pos.x, y: spawn.pos.y + 5 }
+            ];
+
+            for (let pos of positions) {
+                if (this.canPlaceStructure(room, pos.x, pos.y)) {
+                    if (extensions + extensionSites < maxExtensions) {
+                        room.createConstructionSite(pos.x, pos.y, STRUCTURE_EXTENSION);
+                        logger.info('Placed extension at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+                        extensionSites++;
+                    }
+                } else {
+                    logger.warn('Position ' + pos.x + ',' + pos.y + ' blocked for extension in ' + room.name);
+                }
+            }
+            if (extensions + extensionSites >= maxExtensions) {
+                logger.info('Max extensions reached in ' + room.name);
+            }
+        } else {
+            logger.info('No new extensions needed in ' + room.name + ' or insufficient energy');
+        }
+    },
+
+    buildStorage: function(room, spawn) {
+        let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+        let storageSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length;
+        logger.info('Storage in ' + room.name + ': ' + (storage ? 1 : 0) + ' built, ' + storageSites + ' sites');
+        if (!storage && storageSites === 0 && room.energyAvailable >= 150) {
+            let pos = { x: spawn.pos.x, y: spawn.pos.y + 3 };
+            if (this.canPlaceStructure(room, pos.x, pos.y)) {
+                room.createConstructionSite(pos.x, pos.y, STRUCTURE_STORAGE);
+                logger.info('Placed storage at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+            } else {
+                logger.warn('Storage position ' + pos.x + ',' + pos.y + ' blocked in ' + room.name);
+            }
+        }
+    },
+
+    buildContainers: function(room) {
+        let sources = room.find(FIND_SOURCES);
+        sources.forEach(source => {
+            let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            if (!nearbyContainer && !nearbySite && room.energyAvailable >= 50) {
+                this.placeContainerNear(room, source.pos);
+            }
+        });
+    },
+
+    buildRoads: function(room, spawn) {
+        let roomMemory = Memory.rooms[room.name];
+        if (!roomMemory.roadsBuilt) {
+            let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+            containers.forEach(container => {
+                this.buildPath(room, container.pos, spawn.pos);
+                this.buildPath(room, container.pos, room.controller.pos);
+            });
+            roomMemory.roadsBuilt = true;
+            logger.info('Built initial roads in ' + room.name);
+        }
+        if (room.controller.level >= 3 && !roomMemory.roadsBuiltExtended) {
+            let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION });
+            extensions.forEach(ext => this.buildPath(room, ext.pos, spawn.pos));
+            let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER });
+            towers.forEach(tower => this.buildPath(room, tower.pos, spawn.pos));
+            roomMemory.roadsBuiltExtended = true;
+            logger.info('Built extended roads in ' + room.name);
+        }
+    },
+
+    buildTowers: function(room, spawn) {
+        let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
+        let towerSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
+        if (towers + towerSites < 1 && room.energyAvailable >= 600) {
+            let positions = [
+                { x: spawn.pos.x - 3, y: spawn.pos.y - 3 },
+                { x: spawn.pos.x + 3, y: spawn.pos.y - 3 },
+                { x: spawn.pos.x - 3, y: spawn.pos.y + 3 },
+                { x: spawn.pos.x + 3, y: spawn.pos.y + 3 }
+            ];
+            for (let pos of positions) {
+                if (this.canPlaceStructure(room, pos.x, pos.y)) {
+                    room.createConstructionSite(pos.x, pos.y, STRUCTURE_TOWER);
+                    logger.info('Placed tower at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+                    break;
+                }
+            }
+        }
+    },
+
+    buildDefenses: function(room, spawn) {
+        let roomMemory = Memory.rooms[room.name];
+        if (!roomMemory.defensesBuilt) {
+            for (let x = spawn.pos.x - 5; x <= spawn.pos.x + 5; x++) {
+                for (let y = spawn.pos.y - 5; y <= spawn.pos.y + 5; y++) {
+                    if (Math.abs(x - spawn.pos.x) === 5 || Math.abs(y - spawn.pos.y) === 5) {
+                        if (this.canPlaceStructure(room, x, y)) {
+                            room.createConstructionSite(x, y, STRUCTURE_WALL);
+                        }
+                    }
+                }
+            }
+            let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+            containers.forEach(container => {
+                if (this.canPlaceStructure(room, container.pos.x, container.pos.y)) {
+                    room.createConstructionSite(container.pos.x, container.pos.y, STRUCTURE_RAMPART);
+                }
+            });
+            roomMemory.defensesBuilt = true;
+            logger.info('Built defenses in ' + room.name);
+        }
+    },
+
+    buildRemoteContainers: function(room) {
+        let roomMemory = Memory.rooms[room.name];
+        if (!roomMemory.remoteContainersBuilt && room.controller.level >= 3) {
+            let targetRoomName = roomMemory.remoteRooms[0];
+            let targetRoom = Game.rooms[targetRoomName];
+            if (targetRoom) {
+                let sources = targetRoom.find(FIND_SOURCES);
+                sources.forEach(source => {
+                    let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                    let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                    if (!nearbyContainer && !nearbySite && room.energyAvailable >= 50) {
+                        this.placeContainerNear(targetRoom, source.pos);
+                    }
+                });
+                roomMemory.remoteContainersBuilt = true;
+                logger.info('Built remote containers in ' + targetRoomName);
+            }
+        }
+    },
+
+    buildRemoteStructures: function(room) {
+        let roomMemory = Memory.rooms[room.name];
+        if (Game.time % 10 === 0 && roomMemory.needsHarvesters && roomMemory.containers < roomMemory.sources && room.energyAvailable >= 50) {
+            let sources = room.find(FIND_SOURCES);
+            sources.forEach(source => {
+                let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                if (!nearbyContainer && !nearbySite) {
+                    this.placeContainerNear(room, source.pos);
+                }
+            });
+        }
+    },
+
+    canPlaceStructure: function(room, x, y) {
+        let terrain = room.lookForAt(LOOK_TERRAIN, x, y)[0];
+        let structures = room.lookForAt(LOOK_STRUCTURES, x, y);
+        let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
+        return terrain !== 'wall' && !structures.length && !sites.length;
+    },
+
+    placeContainerNear: function(room, pos) {
+        let positions = [
+            { x: pos.x, y: pos.y + 1 }, { x: pos.x, y: pos.y - 1 },
+            { x: pos.x - 1, y: pos.y }, { x: pos.x + 1, y: pos.y }
+        ];
+        for (let p of positions) {
+            if (this.canPlaceStructure(room, p.x, p.y)) {
+                room.createConstructionSite(p.x, p.y, STRUCTURE_CONTAINER);
+                logger.info('Placed container at ' + p.x + ',' + p.y + ' in ' + room.name);
+                break;
+            }
+        }
+    },
+
+    buildPath: function(room, fromPos, toPos) {
+        let path = room.findPath(fromPos, toPos, { ignoreCreeps: true, swampCost: 1 });
+        path.forEach(step => {
+            if (room.lookForAt(LOOK_STRUCTURES, step.x, step.y).length === 0 &&
+                room.lookForAt(LOOK_CONSTRUCTION_SITES, step.x, step.y).length === 0) {
+                room.createConstructionSite(step.x, step.y, STRUCTURE_ROAD);
+            }
+        });
+    }
+};
