@@ -121,29 +121,44 @@ module.exports = {
                     if (!storage && storageSites === 0 && room.energyAvailable >= 150) {
                         let spawn = room.find(FIND_MY_SPAWNS)[0];
                         if (spawn) {
-                            let storagePositions = [
-                                { x: spawn.pos.x, y: spawn.pos.y + 3 }, // Unterhalb des Spawns
-                                { x: spawn.pos.x + 3, y: spawn.pos.y }, // Rechts
-                                { x: spawn.pos.x - 3, y: spawn.pos.y }, // Links
-                                { x: spawn.pos.x, y: spawn.pos.y - 3 }, // Oberhalb
-                                { x: spawn.pos.x + 2, y: spawn.pos.y + 2 }, // Diagonal rechts unten
-                                { x: spawn.pos.x - 2, y: spawn.pos.y + 2 }, // Diagonal links unten
-                                { x: spawn.pos.x + 2, y: spawn.pos.y - 2 }, // Diagonal rechts oben
-                                { x: spawn.pos.x - 2, y: spawn.pos.y - 2 }  // Diagonal links oben
-                            ];
+                            // Manuelle Position (du musst die Koordinaten anpassen)
+                            let manualStoragePos = roomMemory.manualStoragePos || { x: 28, y: 41 }; // Beispielposition, passe sie an deine Karte an
+                            let terrain = room.lookForAt(LOOK_TERRAIN, manualStoragePos.x, manualStoragePos.y)[0];
+                            let structures = room.lookForAt(LOOK_STRUCTURES, manualStoragePos.x, manualStoragePos.y);
+                            let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, manualStoragePos.x, manualStoragePos.y);
+                            if (terrain !== 'wall' && !structures.length && !sites.length) {
+                                room.createConstructionSite(manualStoragePos.x, manualStoragePos.y, STRUCTURE_STORAGE);
+                                console.log(`Placing storage at ${manualStoragePos.x},${manualStoragePos.y} in ${room.name}`);
+                            } else {
+                                console.log(`Manual storage placement at ${manualStoragePos.x},${manualStoragePos.y} blocked, searching dynamically...`);
+                                let storagePositions = [
+                                    { x: spawn.pos.x, y: spawn.pos.y + 3 }, // Unterhalb des Spawns
+                                    { x: spawn.pos.x + 3, y: spawn.pos.y }, // Rechts
+                                    { x: spawn.pos.x - 3, y: spawn.pos.y }, // Links
+                                    { x: spawn.pos.x, y: spawn.pos.y - 3 }, // Oberhalb
+                                    { x: spawn.pos.x + 2, y: spawn.pos.y + 2 }, // Diagonal rechts unten
+                                    { x: spawn.pos.x - 2, y: spawn.pos.y + 2 }, // Diagonal links unten
+                                    { x: spawn.pos.x + 2, y: spawn.pos.y - 2 }, // Diagonal rechts oben
+                                    { x: spawn.pos.x - 2, y: spawn.pos.y - 2 }, // Diagonal links oben
+                                    { x: spawn.pos.x + 4, y: spawn.pos.y }, // Weiter rechts
+                                    { x: spawn.pos.x - 4, y: spawn.pos.y }, // Weiter links
+                                    { x: spawn.pos.x, y: spawn.pos.y + 4 }, // Weiter unten
+                                    { x: spawn.pos.x, y: spawn.pos.y - 4 }  // Weiter oben
+                                ];
 
-                            for (let pos of storagePositions) {
-                                let terrain = room.lookForAt(LOOK_TERRAIN, pos.x, pos.y)[0];
-                                let structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
-                                let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, pos.x, pos.y);
-                                if (terrain !== 'wall' && !structures.length && !sites.length) {
-                                    room.createConstructionSite(pos.x, pos.y, STRUCTURE_STORAGE);
-                                    console.log(`Placing storage at ${pos.x},${pos.y} in ${room.name}`);
-                                    break;
+                                for (let pos of storagePositions) {
+                                    let terrain = room.lookForAt(LOOK_TERRAIN, pos.x, pos.y)[0];
+                                    let structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+                                    let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, pos.x, pos.y);
+                                    if (terrain !== 'wall' && !structures.length && !sites.length) {
+                                        room.createConstructionSite(pos.x, pos.y, STRUCTURE_STORAGE);
+                                        console.log(`Placing storage at ${pos.x},${pos.y} in ${room.name}`);
+                                        break;
+                                    }
                                 }
-                            }
-                            if (!room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length) {
-                                console.log(`Storage placement blocked at all positions, manual placement recommended for ${room.name}`);
+                                if (!room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length) {
+                                    console.log(`Storage placement blocked at all positions, manual placement required for ${room.name}`);
+                                }
                             }
                         }
                     }
