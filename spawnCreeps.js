@@ -6,13 +6,13 @@ module.exports = {
         let body = [];
 
         if (role === 'harvester') {
-            let workParts = Math.min(Math.floor(energyAvailable / 200), 5);
+            let workParts = Math.max(1, Math.min(Math.floor(energyAvailable / 200), 5)); // Mindestens 1 WORK
             let carryParts = 1;
             let moveParts = Math.ceil((workParts + carryParts) / 2);
             let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);
             body = totalCost <= energyAvailable ? 
                 Array(workParts).fill(WORK).concat(Array(carryParts).fill(CARRY)).concat(Array(moveParts).fill(MOVE)) : 
-                [WORK, CARRY, MOVE];
+                [WORK, CARRY, MOVE]; // Minimaler Body mit WORK
         } else if (role === 'hauler') {
             let carryParts = Math.min(Math.floor(energyAvailable / 100), 6);
             let moveParts = Math.ceil(carryParts / 2);
@@ -74,13 +74,13 @@ module.exports = {
             memory.targetRoom = targetRoom || (remoteRooms.length > 0 ? remoteRooms[0] : null);
             if (!memory.targetRoom) {
                 logger.warn('No targetRoom for scout in ' + homeRoom + ', skipping spawn');
-                return; // Verhindert das Spawnen ohne targetRoom
+                return;
             }
         }
 
         let result = spawn.spawnCreep(body, name, { memory: memory });
         if (result === OK) {
-            logger.info('Spawned ' + name + ' in ' + spawn.room.name + ' with role ' + role);
+            logger.info('Spawned ' + name + ' in ' + spawn.room.name + ' with role ' + role + ' and body ' + body);
         } else {
             logger.error('Failed to spawn ' + name + ': ' + result);
         }

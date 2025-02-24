@@ -3,6 +3,7 @@ var spawnManager = require('spawnManager');
 var structureBuilder = require('structureBuilder');
 var memoryManager = require('memoryManager');
 var logger = require('logger');
+var roleTower = require('role.tower');
 
 module.exports.loop = function () {
     logger.info('Main loop running');
@@ -33,5 +34,6 @@ module.exports.loop = function () {
     }
 
     creepManager.runCreeps();
+    roleTower.run();
     logger.info('Creeps run');
 };

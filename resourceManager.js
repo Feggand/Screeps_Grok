@@ -22,7 +22,23 @@ module.exports = {
     },
 
     collectLocalEnergy: function(creep) {
-        // Priorität 1: Container
+        // Für Worker: Nur Storage
+        if (creep.memory.role === 'worker') {
+            let storage = creep.room.find(FIND_STRUCTURES, {
+                filter: function(s) { return s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0; }
+            })[0];
+            if (storage) {
+                if (creep.withdraw(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
+                    logger.info(creep.name + ': Moving to storage at ' + storage.pos + ' for energy');
+                } else {
+                    logger.info(creep.name + ': Withdrawing energy from storage at ' + storage.pos);
+                }
+                return;
+            }
+        }
+
+        // Für andere Rollen (z. B. Hauler)
         let containers = creep.room.find(FIND_STRUCTURES, {
             filter: function(s) { return s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0; }
         });
@@ -55,7 +71,6 @@ module.exports = {
             return;
         }
 
-        // Priorität 2: Fallengelassene Energie
         let droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
             filter: function(r) { return r.resourceType === RESOURCE_ENERGY && r.amount > 0; }
         }, { avoidCreeps: true });
@@ -66,7 +81,6 @@ module.exports = {
             return;
         }
 
-        // Priorität 3: Tombstones
         let tombstone = creep.pos.findClosestByPath(FIND_TOMBSTONES, {
             filter: function(t) { return t.store[RESOURCE_ENERGY] > 0; }
         }, { avoidCreeps: true });
@@ -77,25 +91,6 @@ module.exports = {
             return;
         }
 
-        // Priorität 4: Spawn/Extensions (für Worker)
-        if (creep.memory.role === 'worker') {
-            let energySource = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: function(s) {
-                    return (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) && s.store[RESOURCE_ENERGY] > 0;
-                }
-            });
-            if (energySource) {
-                if (creep.withdraw(energySource, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(energySource, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to ' + energySource.structureType + ' at ' + energySource.pos + ' for energy');
-                } else {
-                    logger.info(creep.name + ': Withdrawing energy from ' + energySource.structureType + ' at ' + energySource.pos);
-                }
-                return;
-            }
-        }
-
-        // Fallback: Zum Spawn bewegen
         let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, { avoidCreeps: true });
         if (spawn) {
             creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });

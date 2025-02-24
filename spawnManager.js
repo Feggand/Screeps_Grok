@@ -42,11 +42,32 @@ module.exports = {
         if (harvesters < roomMemory.minHarvesters && room.energyAvailable >= 150) {
             spawnCreeps.spawn(spawn, 'harvester', null, room.name);
             logger.info('Spawning new harvester in ' + room.name);
-            return; // Priorisiert Harvester
+            return;
         } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 100) {
             spawnCreeps.spawn(spawn, 'hauler', null, room.name);
         } else if (workers < roomMemory.minWorkers && room.energyAvailable >= 150) {
-            spawnCreeps.spawn(spawn, 'worker', null, room.name);
+            let workerRoles = ['upgrader', 'repairer', 'wallRepairer', 'flexible'];
+            let existingWorkers = _.filter(Game.creeps, function(c) { return c.memory.role === 'worker' && c.memory.homeRoom === room.name; });
+            let roleCounts = _.countBy(existingWorkers, 'memory.subRole');
+            let nextRole = workerRoles.find(function(role) { return !roleCounts[role] || roleCounts[role] < 1; }) || 'flexible';
+
+            // Dynamische Worker-Größe basierend auf verfügbarer Energie
+            let energyAvailable = room.energyAvailable;
+            let workParts = Math.min(Math.floor(energyAvailable / 200), 4); // Max 4 WORK
+            let carryParts = Math.min(Math.floor((energyAvailable - workParts * 100) / 50), 2); // Max 2 CARRY
+            let moveParts = Math.ceil((workParts + carryParts) / 2); // Genug MOVE für die Last
+            let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);
+            let body = totalCost <= energyAvailable ? 
+                Array(workParts).fill(WORK).concat(Array(carryParts).fill(CARRY)).concat(Array(moveParts).fill(MOVE)) : 
+                [WORK, CARRY, MOVE]; // Minimaler Body als Fallback
+
+            let memory = { role: 'worker', subRole: nextRole, working: false, homeRoom: room.name };
+            let result = spawn.spawnCreep(body, 'worker_' + Game.time, { memory: memory });
+            if (result === OK) {
+                logger.info('Spawned worker with subRole ' + nextRole + ' in ' + room.name + ' with body ' + JSON.stringify(body));
+            } else {
+                logger.error('Failed to spawn worker with subRole ' + nextRole + ': ' + result);
+            }
         } else if (remoteHarvesters < roomMemory.minRemoteHarvesters && room.energyAvailable >= 150) {
             let remoteRooms = roomMemory.remoteRooms || [];
             let targetRoom = remoteRooms.length > 0 ? remoteRooms[0] : null;
