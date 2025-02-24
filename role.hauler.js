@@ -49,22 +49,14 @@ module.exports.run = function (creep) {
             return;
         }
 
-        // Fallback für Hauler mit voller Energie: Überwache lokale Container und suche nach Ressourcen
+        // Fallback für Hauler mit voller Energie: Bewege dich zum Spawn und suche nach Ressourcen
         console.log(`${creep.name}: No structures need energy, checking local tasks in ${homeRoom}`);
         if (room.name === homeRoom) {
-            // Priorität 3: Überprüfe Container für zukünftige Energie (selbst wenn leer)
-            let containers = room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER
-            });
-            if (containers.length) {
-                let targetContainer = creep.memory.containerId ? Game.getObjectById(creep.memory.containerId) : null;
-                if (!targetContainer) {
-                    targetContainer = creep.pos.findClosestByPath(containers);
-                    creep.memory.containerId = targetContainer.id;
-                    console.log(`${creep.name}: Monitoring container ${targetContainer.id} in ${room.name}`);
-                }
-                creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
-                console.log(`${creep.name}: Moving to monitor container ${targetContainer.id} in ${room.name} for energy`);
+            // Priorität 3: Bewege dich zum Spawn, um in der Nähe von potenziellen Zielen zu bleiben
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                console.log(`${creep.name}: Moving to spawn in ${homeRoom} to stay near potential targets`);
                 return;
             }
 
@@ -92,13 +84,21 @@ module.exports.run = function (creep) {
                 return;
             }
 
-            // Letzter Fallback: Bewege dich zum Spawn, um in der Nähe von potenziellen Zielen zu bleiben
-            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
-            if (spawn) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
-                console.log(`${creep.name}: No tasks, moving to spawn in ${homeRoom}`);
+            // Letzter Fallback: Bewege dich zum nächsten Container, um Energie zu überwachen
+            let containers = room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER
+            });
+            if (containers.length) {
+                let targetContainer = creep.memory.containerId ? Game.getObjectById(creep.memory.containerId) : null;
+                if (!targetContainer) {
+                    targetContainer = creep.pos.findClosestByPath(containers);
+                    creep.memory.containerId = targetContainer.id;
+                    console.log(`${creep.name}: Monitoring container ${targetContainer.id} in ${room.name}`);
+                }
+                creep.moveTo(targetContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
+                console.log(`${creep.name}: Moving to monitor container ${targetContainer.id} in ${room.name} for energy`);
             } else {
-                console.log(`${creep.name}: No spawn or tasks found in ${homeRoom}, waiting`);
+                console.log(`${creep.name}: No spawn, containers, or tasks found in ${homeRoom}, waiting`);
             }
         }
     } else {

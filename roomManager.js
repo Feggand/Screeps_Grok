@@ -84,21 +84,21 @@ module.exports = {
             if (room.controller.level >= 2) {
                 let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
                 let extensionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
-                let maxExtensions = room.controller.level === 2 ? 5 : 10;
+                let maxExtensions = room.controller.level === 2 ? 5 : room.controller.level === 3 ? 10 : 20; // Level 4: 20 Extensions
 
                 if (extensions + extensionSites < maxExtensions && room.energyAvailable >= 50) {
                     if (spawn) {
                         let positions = [
-                            { x: spawn.pos.x - 2, y: spawn.pos.y },
-                            { x: spawn.pos.x + 2, y: spawn.pos.y },
-                            { x: spawn.pos.x, y: spawn.pos.y - 2 },
-                            { x: spawn.pos.x, y: spawn.pos.y + 2 },
-                            { x: spawn.pos.x - 2, y: spawn.pos.y - 2 },
-                            { x: spawn.pos.x + 2, y: spawn.pos.y - 2 },
-                            { x: spawn.pos.x - 2, y: spawn.pos.y + 2 },
-                            { x: spawn.pos.x + 2, y: spawn.pos.y + 2 },
-                            { x: spawn.pos.x - 4, y: spawn.pos.y },
-                            { x: spawn.pos.x + 4, y: spawn.pos.y }
+                            { x: spawn.pos.x - 2, y: spawn.pos.y }, { x: spawn.pos.x + 2, y: spawn.pos.y },
+                            { x: spawn.pos.x, y: spawn.pos.y - 2 }, { x: spawn.pos.x, y: spawn.pos.y + 2 },
+                            { x: spawn.pos.x - 2, y: spawn.pos.y - 2 }, { x: spawn.pos.x + 2, y: spawn.pos.y - 2 },
+                            { x: spawn.pos.x - 2, y: spawn.pos.y + 2 }, { x: spawn.pos.x + 2, y: spawn.pos.y + 2 },
+                            { x: spawn.pos.x - 3, y: spawn.pos.y }, { x: spawn.pos.x + 3, y: spawn.pos.y },
+                            { x: spawn.pos.x, y: spawn.pos.y - 3 }, { x: spawn.pos.x, y: spawn.pos.y + 3 },
+                            { x: spawn.pos.x - 3, y: spawn.pos.y - 3 }, { x: spawn.pos.x + 3, y: spawn.pos.y - 3 },
+                            { x: spawn.pos.x - 3, y: spawn.pos.y + 3 }, { x: spawn.pos.x + 3, y: spawn.pos.y + 3 },
+                            { x: spawn.pos.x - 4, y: spawn.pos.y - 2 }, { x: spawn.pos.x + 4, y: spawn.pos.y - 2 },
+                            { x: spawn.pos.x - 4, y: spawn.pos.y + 2 }, { x: spawn.pos.x + 4, y: spawn.pos.y + 2 }
                         ];
 
                         for (let pos of positions) {
@@ -108,6 +108,42 @@ module.exports = {
                             if (terrain !== 'wall' && !structures.length && !sites.length && extensions + extensionSites < maxExtensions) {
                                 room.createConstructionSite(pos.x, pos.y, STRUCTURE_EXTENSION);
                                 extensionSites++;
+                                console.log(`Placing extension at ${pos.x},${pos.y} in ${room.name}`);
+                            }
+                        }
+                    }
+                }
+
+                // Storage bauen (nur für Level 4)
+                if (room.controller.level === 4) {
+                    let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+                    let storageSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length;
+                    if (!storage && storageSites === 0 && room.energyAvailable >= 150) {
+                        let spawn = room.find(FIND_MY_SPAWNS)[0];
+                        if (spawn) {
+                            let storagePositions = [
+                                { x: spawn.pos.x, y: spawn.pos.y + 3 }, // Unterhalb des Spawns
+                                { x: spawn.pos.x + 3, y: spawn.pos.y }, // Rechts
+                                { x: spawn.pos.x - 3, y: spawn.pos.y }, // Links
+                                { x: spawn.pos.x, y: spawn.pos.y - 3 }, // Oberhalb
+                                { x: spawn.pos.x + 2, y: spawn.pos.y + 2 }, // Diagonal rechts unten
+                                { x: spawn.pos.x - 2, y: spawn.pos.y + 2 }, // Diagonal links unten
+                                { x: spawn.pos.x + 2, y: spawn.pos.y - 2 }, // Diagonal rechts oben
+                                { x: spawn.pos.x - 2, y: spawn.pos.y - 2 }  // Diagonal links oben
+                            ];
+
+                            for (let pos of storagePositions) {
+                                let terrain = room.lookForAt(LOOK_TERRAIN, pos.x, pos.y)[0];
+                                let structures = room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+                                let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, pos.x, pos.y);
+                                if (terrain !== 'wall' && !structures.length && !sites.length) {
+                                    room.createConstructionSite(pos.x, pos.y, STRUCTURE_STORAGE);
+                                    console.log(`Placing storage at ${pos.x},${pos.y} in ${room.name}`);
+                                    break;
+                                }
+                            }
+                            if (!room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length) {
+                                console.log(`Storage placement blocked at all positions, manual placement recommended for ${room.name}`);
                             }
                         }
                     }
