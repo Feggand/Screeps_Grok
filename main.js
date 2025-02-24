@@ -8,11 +8,23 @@ module.exports.loop = function () {
     console.log('Main loop running');
     memoryManager.initializeMemory();
     console.log('Memory initialized');
-    console.log('Memory.rooms[W6N1]:', JSON.stringify(Memory.rooms['W6N1']));
+
+    // Bereinigung von Memory.creeps
+    if (Game.time % 100 === 0) { // Nur alle 100 Ticks, um Performance zu sparen
+        for (let name in Memory.creeps) {
+            if (!Game.creeps[name]) {
+                console.log(`Removing dead creep ${name} from Memory`);
+                delete Memory.creeps[name];
+            } else if (Memory.creeps[name] === undefined || Object.keys(Memory.creeps[name]).length === 0) {
+                console.log(`Removing invalid creep ${name} (undefined or empty) from Memory`);
+                delete Memory.creeps[name];
+            }
+        }
+    }
 
     for (let roomName in Game.rooms) {
         let room = Game.rooms[roomName];
-        console.log(`Room: ${roomName}, isMyRoom: ${Memory.rooms[roomName].isMyRoom}`);
+        console.log(`Room: ${roomName}, isMyRoom: ${Memory.rooms[roomName]?.isMyRoom || 'undefined'}`);
         if (roomManager && typeof roomManager.manageRoom === 'function') {
             console.log(`Calling manageRoom for ${roomName}`);
             roomManager.manageRoom(room);
