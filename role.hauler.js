@@ -16,6 +16,8 @@ module.exports.run = function (creep) {
     let targetRoom = 'W7N1';
     let room = creep.room;
 
+    console.log(`${creep.name} in ${room.name}: working=${creep.memory.working}, energy=${creep.store[RESOURCE_ENERGY]}/${creep.store.getCapacity(RESOURCE_ENERGY)}`);
+
     if (creep.memory.working) {
         // Priorität 1: Spawns und Extensions füllen
         let primaryTarget = creep.pos.findClosestByPath(FIND_STRUCTURES, {
@@ -27,6 +29,7 @@ module.exports.run = function (creep) {
         if (primaryTarget) {
             if (creep.transfer(primaryTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(primaryTarget, { visualizePathStyle: { stroke: '#ffffff' } });
+                console.log(`${creep.name}: Moving to transfer energy to ${primaryTarget.structureType} at ${primaryTarget.pos}`);
             }
             return;
         }
@@ -41,12 +44,15 @@ module.exports.run = function (creep) {
         if (secondaryTarget) {
             if (creep.transfer(secondaryTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(secondaryTarget, { visualizePathStyle: { stroke: '#ffffff' } });
+                console.log(`${creep.name}: Moving to transfer energy to tower at ${secondaryTarget.pos}`);
             }
             return;
         }
     } else {
         // Prüfe, ob der Hauler in homeRoom ist oder zurückgekehrt ist
         if (room.name === homeRoom) {
+            console.log(`${creep.name} in ${homeRoom}: Checking local tasks`);
+
             // Priorität 1: Fallengelassene Energie aufheben
             let droppedEnergy = creep.pos.findClosestByPath(FIND_DROPPED_RESOURCES, {
                 filter: r => r.resourceType === RESOURCE_ENERGY && r.amount > 0
@@ -78,6 +84,7 @@ module.exports.run = function (creep) {
             if (containers.length) {
                 let targetContainer = creep.memory.containerId ? Game.getObjectById(creep.memory.containerId) : null;
                 if (!targetContainer || targetContainer.store[RESOURCE_ENERGY] === 0) {
+                    console.log(`${creep.name}: Checking containers in ${homeRoom}, found ${containers.length}`);
                     targetContainer = _.max(containers, c => c.store[RESOURCE_ENERGY]);
                     creep.memory.containerId = targetContainer.id;
                     console.log(`${creep.name}: Assigned to container ${targetContainer.id} in ${room.name}`);
@@ -94,6 +101,8 @@ module.exports.run = function (creep) {
             if (source) {
                 creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
                 console.log(`${creep.name}: No tasks, moving to nearest source in ${homeRoom}`);
+            } else {
+                console.log(`${creep.name}: No sources or tasks found in ${homeRoom}, waiting`);
             }
         } else {
             // Priorität 1: Fallengelassene Energie aufheben (im aktuellen Raum)
