@@ -1,129 +1,59 @@
 var resourceManager = require('resourceManager');
+var taskManager = require('taskManager');
 var logger = require('logger');
 
 module.exports.run = function (creep) {
-    if (creep.memory.task || creep.memory.targetId) {
-        logger.info(creep.name + ': Clearing worker-specific memory (task, targetId)');
-        delete creep.memory.task;
-        delete creep.memory.targetId;
-    }
-
+    // Arbeitsstatus basierend auf Energie aktualisieren
     if (creep.store[RESOURCE_ENERGY] === 0) {
         creep.memory.working = false;
-        logger.info(creep.name + ': Switching to collecting energy (no energy left)');
+        logger.info(creep.name + ': Wechselt zu Energie sammeln (keine Energie).');
     } else if (creep.store.getFreeCapacity() === 0) {
         creep.memory.working = true;
-        logger.info(creep.name + ': Switching to working (full energy)');
+        logger.info(creep.name + ': Wechselt zu Arbeiten (voll mit Energie).');
     } else if (creep.store[RESOURCE_ENERGY] > 0) {
         creep.memory.working = true;
-        logger.info(creep.name + ': Switching to working (partial energy)');
+        logger.info(creep.name + ': Wechselt zu Arbeiten (Teilenergie).');
     }
 
-    let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(function(r) { return Memory.rooms[r].isMyRoom; });
-    let homeRoomMemory = Memory.rooms[homeRoom];
-    let targetRoom = homeRoomMemory && homeRoomMemory.remoteRooms && homeRoomMemory.remoteRooms.length > 0 ? homeRoomMemory.remoteRooms[0] : null;
+    let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
 
     if (creep.memory.working) {
-        let constructionSite = creep.pos.findClosestByPath(FIND_CONSTRUCTION_SITES);
-        if (constructionSite) {
-            if (creep.build(constructionSite) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(constructionSite, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                logger.info(creep.name + ': Moving to build ' + constructionSite.structureType + ' at ' + constructionSite.pos);
-            } else {
-                logger.info(creep.name + ': Building ' + constructionSite.structureType + ' at ' + constructionSite.pos);
-            }
-            return;
-        } else {
-            logger.info(creep.name + ': No construction sites, checking subRole tasks');
-        }
+        // Hole Aufgabenliste
+        let tasks = taskManager.getTasks(creep.room);
+        // Weise die dringendste Aufgabe zu
+        taskManager.assignTask(creep, tasks);
 
-        if (creep.memory.subRole === 'upgrader') {
-            if (creep.room.controller && creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                logger.info(creep.name + ': Moving to controller for upgrade');
-            } else if (creep.room.controller) {
-                logger.info(creep.name + ': Upgrading controller');
-            }
-            return;
-        } else if (creep.memory.subRole === 'repairer') {
-            let damagedStructure = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: function(s) {
-                    return (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && s.hits < s.hitsMax;
-                }
-            });
-            if (damagedStructure) {
-                if (creep.repair(damagedStructure) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(damagedStructure, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to repair ' + damagedStructure.structureType + ' at ' + damagedStructure.pos);
+        // Führe die zugewiesene Aufgabe aus
+        if (creep.memory.task === 'repair') {
+            let target = Game.getObjectById(creep.memory.targetId);
+            if (target) {
+                if (creep.repair(target) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    logger.info(creep.name + ': Bewegt sich zur Reparatur von ' + target.structureType);
                 } else {
-                    logger.info(creep.name + ': Repairing ' + damagedStructure.structureType + ' at ' + damagedStructure.pos);
+                    logger.info(creep.name + ': Repariert ' + target.structureType);
                 }
-                return;
             }
-        } else if (creep.memory.subRole === 'wallRepairer') {
-            let damagedWalls = creep.room.find(FIND_STRUCTURES, {
-                filter: function(s) {
-                    return (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax;
-                }
-            });
-            if (damagedWalls.length) {
-                let targetWall = _.min(damagedWalls, 'hits');
-                if (creep.repair(targetWall) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(targetWall, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to repair ' + targetWall.structureType + ' at ' + targetWall.pos);
+        } else if (creep.memory.task === 'upgrade') {
+            let controller = Game.getObjectById(creep.memory.targetId);
+            if (controller) {
+                if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } });
+                    logger.info(creep.name + ': Bewegt sich zum Controller zum Upgraden');
                 } else {
-                    logger.info(creep.name + ': Repairing ' + targetWall.structureType + ' at ' + targetWall.pos);
+                    logger.info(creep.name + ': Upgraded Controller');
                 }
-                return;
             }
-        } else { // Flexible Worker
-            let damagedNonWalls = creep.room.find(FIND_STRUCTURES, {
-                filter: function(s) {
-                    return (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && s.hits < s.hitsMax;
-                }
-            });
-            let damagedWalls = creep.room.find(FIND_STRUCTURES, {
-                filter: function(s) {
-                    return (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax;
-                }
-            });
-            logger.info(creep.name + ': Flexible worker checking: ' + damagedNonWalls.length + ' non-walls, ' + damagedWalls.length + ' walls damaged');
-            if (damagedNonWalls.length > 5) { // Unterstützung für repairer
-                let targetStructure = creep.pos.findClosestByPath(damagedNonWalls);
-                if (creep.repair(targetStructure) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(targetStructure, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to repair ' + targetStructure.structureType + ' at ' + targetStructure.pos);
-                } else {
-                    logger.info(creep.name + ': Repairing ' + targetStructure.structureType + ' at ' + targetStructure.pos);
-                }
-                return;
-            } else if (damagedWalls.length > 10) { // Unterstützung für wallRepairer
-                let targetWall = _.min(damagedWalls, 'hits');
-                if (creep.repair(targetWall) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(targetWall, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to repair ' + targetWall.structureType + ' at ' + targetWall.pos);
-                } else {
-                    logger.info(creep.name + ': Repairing ' + targetWall.structureType + ' at ' + targetWall.pos);
-                }
-                return;
-            } else { // Standard: Controller upgraden
-                if (creep.room.controller && creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(creep.room.controller, { visualizePathStyle: { stroke: '#ffffff' }, avoidCreeps: true });
-                    logger.info(creep.name + ': Moving to controller for upgrade');
-                } else if (creep.room.controller) {
-                    logger.info(creep.name + ': Upgrading controller');
-                }
-                return;
+        } else if (creep.memory.task === 'idle') {
+            // Fallback: Zum Spawn bewegen
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn');
             }
-        }
-
-        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, { avoidCreeps: true });
-        if (spawn) {
-            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' }, avoidCreeps: true });
-            logger.info(creep.name + ': No tasks, moving to spawn at ' + spawn.pos);
         }
     } else {
-        logger.info(creep.name + ': Collecting energy');
-        resourceManager.collectEnergy(creep, homeRoom, targetRoom);
+        logger.info(creep.name + ': Sammelt Energie');
+        resourceManager.collectEnergy(creep, homeRoom);
     }
 };
