@@ -13,7 +13,7 @@ var taskManager = {
             tasks.push({
                 type: 'repair',
                 target: wall.id,
-                priority: 10 - (wall.hits / (wall.hitsMax * 0.5)) * 10 // Höhere Priorität bei mehr Schaden
+                priority: 10 - (wall.hits / (wall.hitsMax * 0.5)) * 10
             });
         });
 
@@ -25,7 +25,7 @@ var taskManager = {
             tasks.push({
                 type: 'repair',
                 target: road.id,
-                priority: 5 // Feste Priorität für Straßen
+                priority: 5
             });
         });
 
@@ -35,20 +35,19 @@ var taskManager = {
             tasks.push({
                 type: 'construct',
                 target: site.id,
-                priority: 10 // Höher als Upgrade, niedriger als dringende Reparaturen
+                priority: 8
             });
         });
 
         // Upgraden des Controllers
         let controllerProgress = room.controller.progress / room.controller.progressTotal;
-        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Dynamische Priorität
+        let upgradePriority = 7 + (1 - controllerProgress) * 3;
         tasks.push({
             type: 'upgrade',
             target: room.controller.id,
             priority: upgradePriority
         });
 
-        // Sortiere Aufgaben nach Priorität (höchste Priorität zuerst)
         tasks.sort((a, b) => b.priority - a.priority);
         return tasks;
     },
@@ -56,7 +55,7 @@ var taskManager = {
     getHaulerTasks: function(room) {
         let tasks = [];
 
-        // Energie liefern an Strukturen
+        // Energie liefern an Strukturen (Spawns, Extensions, Türme)
         let energyTargets = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
@@ -67,7 +66,7 @@ var taskManager = {
             } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
                 priority = 8; // Mittlere Priorität für Spawns und Extensions
             } else {
-                priority = 5; // Niedrigere Priorität für andere Strukturen
+                priority = 5; // Niedrigere Priorität für Türme mit mehr Energie
             }
             tasks.push({
                 type: 'deliver',
@@ -76,15 +75,15 @@ var taskManager = {
             });
         });
 
-        // Energie liefern an Storage
-        let storage = room.find(FIND_STRUCTURES, {
+        // Energie liefern an Storage (nur wenn Spawns/Extensions voll)
+        let storageDeliver = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
-        storage.forEach(store => {
+        storageDeliver.forEach(store => {
             tasks.push({
                 type: 'deliver',
                 target: store.id,
-                priority: 4 // Niedrige Priorität für Storage
+                priority: 4 // Niedrigste Priorität für Storage
             });
         });
 
@@ -93,12 +92,11 @@ var taskManager = {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
         });
         containers.forEach(container => {
-            // Berechne den Füllstand des Containers (0 bis 1)
             let energyPercentage = container.store[RESOURCE_ENERGY] / container.store.getCapacity(RESOURCE_ENERGY);
             tasks.push({
                 type: 'collect',
                 target: container.id,
-                priority: 7 + energyPercentage * 3 // Dynamische Priorität basierend auf Füllstand
+                priority: 7 + energyPercentage * 3
             });
         });
 
@@ -110,7 +108,7 @@ var taskManager = {
             tasks.push({
                 type: 'collect',
                 target: resource.id,
-                priority: 9 // Hohe Priorität für dropped resources
+                priority: 9
             });
         });
 
@@ -122,7 +120,7 @@ var taskManager = {
             tasks.push({
                 type: 'collect',
                 target: tombstone.id,
-                priority: 9 // Hohe Priorität für Tombstones
+                priority: 9
             });
         });
 
@@ -134,11 +132,10 @@ var taskManager = {
             tasks.push({
                 type: 'collect',
                 target: store.id,
-                priority: 6 // Niedrigere Priorität für Storage
+                priority: 6
             });
         });
 
-        // Sortiere Aufgaben nach Priorität (höchste Priorität zuerst)
         tasks.sort((a, b) => b.priority - a.priority);
         return tasks;
     },
@@ -150,6 +147,7 @@ var taskManager = {
             logger.info(creep.name + ': Aufgabe zugewiesen - ' + tasks[0].type + ' auf ' + tasks[0].target);
         } else {
             creep.memory.task = 'idle';
+            creep.memory.targetId = null;
             logger.info(creep.name + ': Keine Aufgaben verfügbar, idle');
         }
     }
