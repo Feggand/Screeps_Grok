@@ -7,7 +7,7 @@ module.exports = {
         let body = [];
 
         if (role === 'harvester') {
-            let workParts = Math.max(2, Math.min(Math.floor(energyAvailable / 200), 5)); // 2-5 WORK
+            let workParts = Math.max(2, Math.min(Math.floor(energyAvailable / 200), 5));
             let carryParts = 1;
             let moveParts = Math.ceil((workParts + carryParts) / 2);
             let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);
@@ -15,22 +15,22 @@ module.exports = {
                 Array(workParts).fill(WORK).concat(Array(carryParts).fill(CARRY)).concat(Array(moveParts).fill(MOVE)) : 
                 [WORK, WORK, CARRY, MOVE];
         } else if (role === 'hauler') {
-            let carryParts = Math.max(2, Math.min(Math.floor(energyAvailable / 100), 6)); // 2-6 CARRY
+            let carryParts = Math.max(4, Math.min(Math.floor(energyAvailable / 100), 8)); // Mehr CARRY-Teile für Effizienz
             let moveParts = Math.ceil(carryParts / 2);
             let totalCost = (carryParts * 50) + (moveParts * 50);
             body = totalCost <= energyAvailable ? 
                 Array(carryParts).fill(CARRY).concat(Array(moveParts).fill(MOVE)) : 
-                [CARRY, CARRY, MOVE];
+                [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE]; // Mindestens 200 Kapazität
         } else if (role === 'worker') {
-            let workParts = Math.max(1, Math.min(Math.floor(energyAvailable / 200), 4)); // 1-4 WORK
-            let carryParts = Math.max(1, Math.min(Math.floor((energyAvailable - workParts * 100) / 50), 2)); // 1-2 CARRY
+            let workParts = Math.max(1, Math.min(Math.floor(energyAvailable / 200), 4));
+            let carryParts = Math.max(1, Math.min(Math.floor((energyAvailable - workParts * 100) / 50), 2));
             let moveParts = Math.ceil((workParts + carryParts) / 2);
             let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);
             body = totalCost <= energyAvailable ? 
                 Array(workParts).fill(WORK).concat(Array(carryParts).fill(CARRY)).concat(Array(moveParts).fill(MOVE)) : 
                 [WORK, CARRY, MOVE];
         } else if (role === 'remoteHarvester') {
-            let workParts = Math.max(2, Math.min(Math.floor(energyAvailable / 200), 5)); // 2-5 WORK
+            let workParts = Math.max(2, Math.min(Math.floor(energyAvailable / 200), 5));
             let carryParts = 1;
             let moveParts = Math.ceil((workParts + carryParts) / 2);
             let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);

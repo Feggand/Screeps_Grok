@@ -4,8 +4,7 @@ var logger = require('logger');
 var taskManager = {
     getWorkerTasks: function(room) {
         let tasks = [];
-
-        // Reparatur von Wänden, nur wenn unter 50% Trefferpunkte
+        // (Unverändert, wie zuvor)
         let damagedWalls = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.0003
         });
@@ -17,7 +16,6 @@ var taskManager = {
             });
         });
 
-        // Reparatur von Straßen
         let damagedRoads = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax
         });
@@ -29,12 +27,11 @@ var taskManager = {
             });
         });
 
-        // Baustellen hinzufügen (höhere Priorität für Container beim Controller)
         let constructionSites = room.find(FIND_CONSTRUCTION_SITES);
         constructionSites.forEach(site => {
-            let priority = 10; // Standardpriorität für alle Baustellen erhöht
+            let priority = 10;
             if (site.structureType === STRUCTURE_CONTAINER && site.pos.getRangeTo(room.controller) <= 3) {
-                priority = 14; // Noch höhere Priorität für Container beim Controller
+                priority = 14;
             }
             tasks.push({
                 type: 'construct',
@@ -43,9 +40,8 @@ var taskManager = {
             });
         });
 
-        // Upgraden des Controllers
         let controllerProgress = room.controller.progress / room.controller.progressTotal;
-        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Max 10
+        let upgradePriority = 7 + (1 - controllerProgress) * 3;
         tasks.push({
             type: 'upgrade',
             target: room.controller.id,
@@ -60,16 +56,28 @@ var taskManager = {
     getHaulerTasks: function(room) {
         let tasks = [];
 
-        // Energie liefern an Strukturen
+        // Energie liefern an Controller-Container (höchste Priorität)
+        let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+        })[0];
+        if (controllerContainer) {
+            tasks.push({
+                type: 'deliver',
+                target: controllerContainer.id,
+                priority: 12 // Höchste Priorität für Controller-Container
+            });
+        }
+
+        // Energie liefern an Spawns und Extensions
         let energyTargets = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
         energyTargets.forEach(target => {
             let priority = 0;
             if (target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
-                priority = 10;
+                priority = 14;
             } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
-                priority = 8;
+                priority = 13;
             } else {
                 priority = 5;
             }
@@ -80,7 +88,7 @@ var taskManager = {
             });
         });
 
-        // Energie liefern an Storage
+        // Energie liefern an Storage (niedrigere Priorität)
         let storageDeliver = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
@@ -88,7 +96,7 @@ var taskManager = {
             tasks.push({
                 type: 'deliver',
                 target: store.id,
-                priority: 4
+                priority: 4 // Niedriger als Controller-Container und Spawns/Extensions
             });
         });
 
@@ -129,7 +137,7 @@ var taskManager = {
             });
         });
 
-        // Energie sammeln aus Storage
+        // Energie sammeln aus Storage (niedrige Priorität)
         let storageForCollect = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
         });
@@ -142,6 +150,7 @@ var taskManager = {
         });
 
         tasks.sort((a, b) => b.priority - a.priority);
+        logger.info('Hauler tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
         return tasks;
     },
 

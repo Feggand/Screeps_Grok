@@ -7,17 +7,16 @@ module.exports = {
         let roomMemory = Memory.rooms[room.name] || {};
         if (!roomMemory.isMyRoom) return;
 
-        // Container-Energie und Quellen überprüfen
         let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
         let totalContainerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
         let sources = room.find(FIND_SOURCES);
 
         // Dynamische Anpassung der Creep-Anzahl
-        roomMemory.minHarvesters = sources.length; // Eine pro Quelle (typisch 2 in W6N1)
-        roomMemory.minHaulers = Math.min(3, Math.max(1, Math.floor(totalContainerEnergy / 500))); // 1-3 Hauler
+        roomMemory.minHarvesters = sources.length;
+        roomMemory.minHaulers = Math.min(3, Math.max(1, Math.ceil(totalContainerEnergy / 1000))); // Weniger Hauler bei wenig Container-Energie
         let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
                           (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0);
-        roomMemory.minWorkers = Math.min(8, Math.max(2, 1 + extraWorkers + Math.floor(totalContainerEnergy / 1000))); // 2-8 Worker
+        roomMemory.minWorkers = Math.min(8, Math.max(2, 1 + extraWorkers + Math.floor(totalContainerEnergy / 1000)));
         roomMemory.minRemoteHarvesters = roomMemory.minRemoteHarvesters || 0;
 
         let creeps = _.filter(Game.creeps, c => c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name));
@@ -40,7 +39,6 @@ module.exports = {
             return;
         }
 
-        // Spawn Scouts für Remote-Räume ab Level 3
         if (room.controller.level >= 3 && room.energyAvailable >= 50) {
             let remoteRooms = roomMemory.remoteRooms || [];
             for (let i = 0; i < remoteRooms.length; i++) {
@@ -54,12 +52,11 @@ module.exports = {
             }
         }
 
-        // Spawn-Priorität
         if (harvesters < roomMemory.minHarvesters && room.energyAvailable >= 300) {
             spawnCreeps.spawn(spawn, 'harvester', null, room.name);
             logger.info('Spawning new harvester in ' + room.name);
             return;
-        } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 200) {
+        } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 300) { // Erhöhte Mindestenergie für größere Hauler
             spawnCreeps.spawn(spawn, 'hauler', null, room.name);
             logger.info('Spawning new hauler in ' + room.name);
             return;
