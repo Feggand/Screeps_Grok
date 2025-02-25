@@ -44,6 +44,21 @@ module.exports.run = function (creep) {
                     logger.info(creep.name + ': Upgraded Controller');
                 }
             }
+        } else if (creep.memory.task === 'construct') {
+            let target = Game.getObjectById(creep.memory.targetId);
+            if (target) {
+                if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    logger.info(creep.name + ': Bewegt sich zur Baustelle ' + target.id);
+                } else {
+                    logger.info(creep.name + ': Baut ' + target.structureType);
+                }
+            } else {
+                // Baustelle existiert nicht mehr, Aufgabe zurücksetzen
+                delete creep.memory.task;
+                delete creep.memory.targetId;
+                logger.info(creep.name + ': Baustelle abgeschlossen oder nicht gefunden, Aufgabe zurückgesetzt');
+            }
         } else if (creep.memory.task === 'idle') {
             // Fallback: Zum Spawn bewegen
             let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);

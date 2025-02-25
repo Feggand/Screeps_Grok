@@ -28,6 +28,16 @@ var taskManager = {
             });
         });
 
+        // Baustellen hinzufügen
+        let constructionSites = room.find(FIND_CONSTRUCTION_SITES);
+        constructionSites.forEach(site => {
+            tasks.push({
+                type: 'construct',
+                target: site.id,
+                priority: 10 // Höher als Upgrade, niedriger als dringende Reparaturen
+            });
+        });
+
         // Upgraden des Controllers
         let controllerProgress = room.controller.progress / room.controller.progressTotal;
         let upgradePriority = 7 + (1 - controllerProgress) * 3; // Höhere Priorität, wenn Fortschritt niedrig
