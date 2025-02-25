@@ -1,14 +1,8 @@
-var resourceManager = require('resourceManager');
+// role.hauler.js
+var taskManager = require('taskManager');
 var logger = require('logger');
 
 module.exports.run = function (creep) {
-    // Alte Aufgaben zurücksetzen
-    if (creep.memory.task || creep.memory.targetId) {
-        logger.info(creep.name + ': Alte Aufgaben zurückgesetzt.');
-        delete creep.memory.task;
-        delete creep.memory.targetId;
-    }
-
     // Arbeitsstatus aktualisieren
     if (creep.store[RESOURCE_ENERGY] === 0) {
         creep.memory.working = false;
@@ -16,78 +10,76 @@ module.exports.run = function (creep) {
         creep.memory.working = true;
     }
 
-    let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
-    let homeRoomMemory = Memory.rooms[homeRoom];
-    let targetRoom = homeRoomMemory && homeRoomMemory.remoteRooms && homeRoomMemory.remoteRooms.length > 0 ? homeRoomMemory.remoteRooms[0] : null;
-
     if (creep.memory.working) {
-        // Notfall: Türme mit wenig Energie
-        let criticalTowers = creep.room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.5
-        });
-        if (criticalTowers.length > 0) {
-            let target = creep.pos.findClosestByPath(criticalTowers);
-            if (target) {
+        // Hole Hauler-Aufgaben
+        let tasks = taskManager.getHaulerTasks(creep.room);
+        // Filtere auf "deliver"-Aufgaben, da der Creep Energie hat
+        let deliverTasks = tasks.filter(t => t.type === 'deliver');
+        taskManager.assignTask(creep, deliverTasks);
+
+        // Führe die Aufgabe aus
+        if (creep.memory.task === 'deliver') {
+            let target = Game.getObjectById(creep.memory.targetId);
+            if (target && target.store) {
                 if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ff0000' } });
-                    logger.info(creep.name + ': Kritisch! Bewegt sich zu Turm ' + target.id + ' mit wenig Energie.');
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Liefern');
                 } else {
-                    logger.info(creep.name + ': Liefert Energie an Turm ' + target.id);
+                    logger.info(creep.name + ': Liefert Energie an ' + target.structureType + ' ' + target.id);
                 }
-                return;
-            }
-        }
-
-        // Priorität 1: Spawns und Extensions
-        let primaryTarget = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        });
-        if (primaryTarget) {
-            if (creep.transfer(primaryTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(primaryTarget, { visualizePathStyle: { stroke: '#ffffff' } });
-                logger.info(creep.name + ': Bewegt sich zu ' + primaryTarget.structureType + ' ' + primaryTarget.id);
             } else {
-                logger.info(creep.name + ': Liefert Energie an ' + primaryTarget.structureType + ' ' + primaryTarget.id);
+                // Ziel ungültig, Aufgabe zurücksetzen
+                delete creep.memory.task;
+                delete creep.memory.targetId;
             }
-            return;
-        }
-
-        // Priorität 2: Türme (nicht kritisch)
-        let secondaryTarget = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        });
-        if (secondaryTarget) {
-            if (creep.transfer(secondaryTarget, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(secondaryTarget, { visualizePathStyle: { stroke: '#ffffff' } });
-                logger.info(creep.name + ': Bewegt sich zu Turm ' + secondaryTarget.id);
-            } else {
-                logger.info(creep.name + ': Liefert Energie an Turm ' + secondaryTarget.id);
+        } else if (creep.memory.task === 'idle') {
+            // Fallback: Zum Spawn bewegen
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn ' + spawn.id);
             }
-            return;
-        }
-
-        // Priorität 3: Storage
-        let storage = creep.room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        })[0];
-        if (storage) {
-            if (creep.transfer(storage, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffffff' } });
-                logger.info(creep.name + ': Bewegt sich zu Storage ' + storage.id);
-            } else {
-                logger.info(creep.name + ': Liefert Energie an Storage ' + storage.id);
-            }
-            return;
-        }
-
-        // Fallback: Zum Spawn bewegen
-        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
-        if (spawn) {
-            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
-            logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn ' + spawn.id);
         }
     } else {
-        // Energie sammeln
-        resourceManager.collectEnergy(creep, homeRoom, targetRoom);
+        // Hole Hauler-Aufgaben
+        let tasks = taskManager.getHaulerTasks(creep.room);
+        // Filtere auf "collect"-Aufgaben, da der Creep keine Energie hat
+        let collectTasks = tasks.filter(t => t.type === 'collect');
+        taskManager.assignTask(creep, collectTasks);
+
+        // Führe die Aufgabe aus
+        if (creep.memory.task === 'collect') {
+            let target = Game.getObjectById(creep.memory.targetId);
+            if (target) {
+                if (target instanceof Resource) {
+                    // Dropped resource
+                    if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
+                    } else {
+                        logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
+                    }
+                } else if (target.store) {
+                    // Container, Tombstone, Storage
+                    if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
+                    } else {
+                        logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
+                    }
+                }
+            } else {
+                // Ziel ungültig, Aufgabe zurücksetzen
+                delete creep.memory.task;
+                delete creep.memory.targetId;
+            }
+        } else if (creep.memory.task === 'idle') {
+            // Fallback: Zum Spawn bewegen
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            if (spawn) {
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn ' + spawn.id);
+            }
+        }
     }
 };

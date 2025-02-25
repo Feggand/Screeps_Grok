@@ -19,7 +19,7 @@ module.exports.run = function (creep) {
 
     if (creep.memory.working) {
         // Hole Aufgabenliste
-        let tasks = taskManager.getTasks(creep.room);
+        let tasks = taskManager.getWorkerTasks(creep.room);
         // Weise die dringendste Aufgabe zu
         taskManager.assignTask(creep, tasks);
 

@@ -1,7 +1,8 @@
+// taskManager.js
 var logger = require('logger');
 
 var taskManager = {
-    getTasks: function(room) {
+    getWorkerTasks: function(room) {
         let tasks = [];
 
         // Reparatur von Wänden, nur wenn unter 50% Trefferpunkte
@@ -40,14 +41,104 @@ var taskManager = {
 
         // Upgraden des Controllers
         let controllerProgress = room.controller.progress / room.controller.progressTotal;
-        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Höhere Priorität, wenn Fortschritt niedrig
+        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Dynamische Priorität
         tasks.push({
             type: 'upgrade',
             target: room.controller.id,
             priority: upgradePriority
         });
 
-        // Aufgaben nach Priorität sortieren
+        // Sortiere Aufgaben nach Priorität (höchste Priorität zuerst)
+        tasks.sort((a, b) => b.priority - a.priority);
+        return tasks;
+    },
+
+    getHaulerTasks: function(room) {
+        let tasks = [];
+
+        // Energie liefern an Strukturen
+        let energyTargets = room.find(FIND_STRUCTURES, {
+            filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+        });
+        energyTargets.forEach(target => {
+            let priority = 0;
+            if (target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
+                priority = 10; // Hohe Priorität für Türme mit wenig Energie
+            } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
+                priority = 8; // Mittlere Priorität für Spawns und Extensions
+            } else {
+                priority = 5; // Niedrigere Priorität für andere Strukturen
+            }
+            tasks.push({
+                type: 'deliver',
+                target: target.id,
+                priority: priority
+            });
+        });
+
+        // Energie liefern an Storage
+        let storage = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+        });
+        storage.forEach(store => {
+            tasks.push({
+                type: 'deliver',
+                target: store.id,
+                priority: 4 // Niedrige Priorität für Storage
+            });
+        });
+
+        // Energie sammeln aus Containern
+        let containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+        });
+        containers.forEach(container => {
+            // Berechne den Füllstand des Containers (0 bis 1)
+            let energyPercentage = container.store[RESOURCE_ENERGY] / container.store.getCapacity(RESOURCE_ENERGY);
+            tasks.push({
+                type: 'collect',
+                target: container.id,
+                priority: 7 + energyPercentage * 3 // Dynamische Priorität basierend auf Füllstand
+            });
+        });
+
+        // Energie sammeln aus dropped resources
+        let droppedEnergy = room.find(FIND_DROPPED_RESOURCES, {
+            filter: r => r.resourceType === RESOURCE_ENERGY
+        });
+        droppedEnergy.forEach(resource => {
+            tasks.push({
+                type: 'collect',
+                target: resource.id,
+                priority: 9 // Hohe Priorität für dropped resources
+            });
+        });
+
+        // Energie sammeln aus Tombstones
+        let tombstones = room.find(FIND_TOMBSTONES, {
+            filter: t => t.store[RESOURCE_ENERGY] > 0
+        });
+        tombstones.forEach(tombstone => {
+            tasks.push({
+                type: 'collect',
+                target: tombstone.id,
+                priority: 9 // Hohe Priorität für Tombstones
+            });
+        });
+
+        // Energie sammeln aus Storage
+        let storageForCollect = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
+        });
+        storageForCollect.forEach(store => {
+            tasks.push({
+                type: 'collect',
+                target: store.id,
+                priority: 6 // Niedrigere Priorität für Storage
+            });
+        });
+
+        // Sortiere Aufgaben nach Priorität (höchste Priorität zuerst)
         tasks.sort((a, b) => b.priority - a.priority);
         return tasks;
     },
