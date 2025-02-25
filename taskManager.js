@@ -29,19 +29,23 @@ var taskManager = {
             });
         });
 
-        // Baustellen hinzufügen
+        // Baustellen hinzufügen (höhere Priorität für Container beim Controller)
         let constructionSites = room.find(FIND_CONSTRUCTION_SITES);
         constructionSites.forEach(site => {
+            let priority = 10; // Standardpriorität für alle Baustellen erhöht
+            if (site.structureType === STRUCTURE_CONTAINER && site.pos.getRangeTo(room.controller) <= 3) {
+                priority = 14; // Noch höhere Priorität für Container beim Controller
+            }
             tasks.push({
                 type: 'construct',
                 target: site.id,
-                priority: 8
+                priority: priority
             });
         });
 
         // Upgraden des Controllers
         let controllerProgress = room.controller.progress / room.controller.progressTotal;
-        let upgradePriority = 7 + (1 - controllerProgress) * 3;
+        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Max 10
         tasks.push({
             type: 'upgrade',
             target: room.controller.id,
@@ -49,24 +53,25 @@ var taskManager = {
         });
 
         tasks.sort((a, b) => b.priority - a.priority);
+        logger.info('Worker tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
         return tasks;
     },
 
     getHaulerTasks: function(room) {
         let tasks = [];
 
-        // Energie liefern an Strukturen (Spawns, Extensions, Türme)
+        // Energie liefern an Strukturen
         let energyTargets = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
         energyTargets.forEach(target => {
             let priority = 0;
             if (target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
-                priority = 10; // Hohe Priorität für Türme mit wenig Energie
+                priority = 10;
             } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
-                priority = 8; // Mittlere Priorität für Spawns und Extensions
+                priority = 8;
             } else {
-                priority = 5; // Niedrigere Priorität für Türme mit mehr Energie
+                priority = 5;
             }
             tasks.push({
                 type: 'deliver',
@@ -75,7 +80,7 @@ var taskManager = {
             });
         });
 
-        // Energie liefern an Storage (nur wenn Spawns/Extensions voll)
+        // Energie liefern an Storage
         let storageDeliver = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
@@ -83,7 +88,7 @@ var taskManager = {
             tasks.push({
                 type: 'deliver',
                 target: store.id,
-                priority: 4 // Niedrigste Priorität für Storage
+                priority: 4
             });
         });
 

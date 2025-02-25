@@ -30,6 +30,7 @@ module.exports.loop = function () {
 
         spawnManager.manageSpawns(room);
         structureBuilder.buildStructures(room);
+        structureBuilder.buildControllerContainer(room); // Neue Zeile für Container-Platzierung
         logger.info(`Room ${roomName} processed`);
     }
 

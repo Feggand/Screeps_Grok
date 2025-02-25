@@ -1,3 +1,4 @@
+// structureBuilder.js
 var logger = require('logger');
 
 module.exports = {
@@ -14,6 +15,7 @@ module.exports = {
         if (room.controller.level >= 2) {
             this.buildExtensions(room, spawn);
             this.buildContainers(room);
+            this.buildControllerContainer(room); // Neue Funktion hinzugefügt
             this.buildRoads(room, spawn);
         }
         if (room.controller.level >= 3) {
@@ -88,6 +90,52 @@ module.exports = {
                 this.placeContainerNear(room, source.pos);
             }
         });
+    },
+
+    buildControllerContainer: function(room) {
+        if (!room.controller || !room.controller.my) return;
+
+        // Prüfe, ob schon ein Container beim Controller existiert
+        let containersNearController = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+        let constructionSitesNearController = room.controller.pos.findInRange(FIND_CONSTRUCTION_SITES, 3, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER
+        });
+
+        if (containersNearController.length > 0 || constructionSitesNearController.length > 0) {
+            logger.info('Room ' + room.name + ': Container or construction site already exists near controller');
+            return;
+        }
+
+        // Finde eine geeignete Position in der Nähe des Controllers (max 3 Felder entfernt)
+        let pos = null;
+        for (let dx = -3; dx <= 3 && !pos; dx++) {
+            for (let dy = -3; dy <= 3 && !pos; dy++) {
+                let x = room.controller.pos.x + dx;
+                let y = room.controller.pos.y + dy;
+                let distance = Math.sqrt(dx * dx + dy * dy);
+                if (distance <= 3 && x >= 0 && x < 50 && y >= 0 && y < 50) {
+                    if (this.canPlaceStructure(room, x, y)) {
+                        pos = new RoomPosition(x, y, room.name);
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (pos && room.energyAvailable >= 50) {
+            let result = room.createConstructionSite(pos, STRUCTURE_CONTAINER);
+            if (result === OK) {
+                logger.info('Room ' + room.name + ': Placed controller container construction site at ' + pos);
+            } else {
+                logger.error('Room ' + room.name + ': Failed to place controller container at ' + pos + ': ' + result);
+            }
+        } else if (!pos) {
+            logger.warn('Room ' + room.name + ': No valid position found for controller container');
+        } else {
+            logger.info('Room ' + room.name + ': Insufficient energy for controller container');
+        }
     },
 
     buildRoads: function(room, spawn) {
