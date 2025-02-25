@@ -4,15 +4,15 @@ var taskManager = {
     getTasks: function(room) {
         let tasks = [];
 
-        // Reparatur von Wänden
+        // Reparatur von Wänden, nur wenn unter 50% Trefferpunkte
         let damagedWalls = room.find(FIND_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.5
+            filter: s => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.0003
         });
         damagedWalls.forEach(wall => {
             tasks.push({
                 type: 'repair',
                 target: wall.id,
-                priority: 10 - (wall.hits / wall.hitsMax) * 10 // Höhere Priorität bei mehr Schaden
+                priority: 10 - (wall.hits / (wall.hitsMax * 0.5)) * 10 // Höhere Priorität bei mehr Schaden
             });
         });
 
@@ -29,13 +29,15 @@ var taskManager = {
         });
 
         // Upgraden des Controllers
+        let controllerProgress = room.controller.progress / room.controller.progressTotal;
+        let upgradePriority = 7 + (1 - controllerProgress) * 3; // Höhere Priorität, wenn Fortschritt niedrig
         tasks.push({
             type: 'upgrade',
             target: room.controller.id,
-            priority: 7 // Mittlere Priorität
+            priority: upgradePriority
         });
 
-        // Sortiere Aufgaben nach Priorität
+        // Aufgaben nach Priorität sortieren
         tasks.sort((a, b) => b.priority - a.priority);
         return tasks;
     },

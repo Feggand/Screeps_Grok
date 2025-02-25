@@ -24,12 +24,11 @@ module.exports.run = function() {
             });
             if (closestDamagedCreep) {
                 tower.heal(closestDamagedCreep);
-                logger.info('Tower in ' + room.name + ' healing creep ' + closestDamagedCreep.name + ' at ' + closestDamagedCreep.pos);
+                logger.info('Tower in ' + room.name + ' healing creep ' + closestDamagedCreep.name);
                 continue;
             }
 
-            // Priorität 3: Strukturen reparieren
-            // Straßen und Container
+            // Priorität 3: Straßen und Container reparieren
             let damagedNonWalls = tower.pos.findInRange(FIND_STRUCTURES, 10, {
                 filter: (s) => (s.structureType === STRUCTURE_ROAD || s.structureType === STRUCTURE_CONTAINER) && s.hits < s.hitsMax
             });
@@ -40,12 +39,12 @@ module.exports.run = function() {
                 continue;
             }
 
-            // Wände und Ramparts (gleichmäßig)
+            // Priorität 4: Wände nur reparieren, wenn unter 50% Trefferpunkte
             let damagedWalls = tower.pos.findInRange(FIND_STRUCTURES, 10, {
-                filter: (s) => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax
+                filter: (s) => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.0003
             });
             if (damagedWalls.length) {
-                let targetWall = _.min(damagedWalls, 'hits');
+                let targetWall = _.min(damagedWalls, 'hits'); // Die am meisten beschädigte Wand
                 tower.repair(targetWall);
                 logger.info('Tower in ' + room.name + ' repairing ' + targetWall.structureType + ' at ' + targetWall.pos);
                 continue;
