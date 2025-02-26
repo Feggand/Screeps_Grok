@@ -1,80 +1,127 @@
+// role.harvester.js
 var logger = require('logger');
+var taskManager = require('taskManager');
 
-module.exports.run = function (creep) {
-    if (creep.store.getFreeCapacity() > 0) {
-        let source = Game.getObjectById(creep.memory.source);
-        if (!source) {
-            let newSource = creep.pos.findClosestByPath(FIND_SOURCES);
-            if (newSource) {
-                creep.memory.source = newSource.id;
-                logger.info(creep.name + ': Assigned new source ' + newSource.id);
-            } else {
-                logger.warn(creep.name + ': No source found');
-                return;
-            }
+module.exports.run = function(creep) {
+    // Prüfe, ob eine Aufgabe existiert und gültig ist
+    let taskValid = false;
+    let target = Game.getObjectById(creep.memory.targetId);
+    if (creep.memory.task && target) {
+        if (creep.memory.task === 'harvest') {
+            let container = Game.getObjectById(creep.memory.containerId);
+            taskValid = target.energy > 0 && container && container.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+        } else if (creep.memory.task === 'constructContainer') {
+            taskValid = !target.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+        } else if (creep.memory.task === 'repair') {
+            taskValid = target.hits < target.hitsMax;
         }
-        source = Game.getObjectById(creep.memory.source);
-        if (!source) {
-            logger.error(creep.name + ': Invalid source ID ' + creep.memory.source);
+    } else if (!target && creep.memory.task) {
+        logger.info(creep.name + ': Ziel ungültig (task: ' + creep.memory.task + ', targetId: ' + creep.memory.targetId + '), Aufgabe zurückgesetzt');
+        delete creep.memory.task;
+        delete creep.memory.targetId;
+        delete creep.memory.containerId;
+    }
+
+    // Wenn keine gültige Aufgabe, neue zuweisen
+    if (!taskValid || !creep.memory.task) {
+        let tasks = taskManager.getHarvesterTasks(creep.room);
+        taskManager.assignTask(creep, tasks);
+    }
+
+    // Aufgabe ausführen
+    if (creep.memory.task === 'harvest') {
+        let source = Game.getObjectById(creep.memory.targetId);
+        let container = Game.getObjectById(creep.memory.containerId);
+        if (!source || !container) {
+            logger.warn(creep.name + ': Ungültige Quelle oder Container, Aufgabe zurückgesetzt');
+            delete creep.memory.task;
+            delete creep.memory.targetId;
+            delete creep.memory.containerId;
             return;
         }
 
-        let container = source.pos.findInRange(FIND_STRUCTURES, 1, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-        })[0];
-        let constructionSite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER
-        })[0];
-
-        if (container) {
-            if (container.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-                logger.info(creep.name + ': Container at ' + container.pos + ' is full');
-                return;
-            }
-            if (creep.pos.x === container.pos.x && creep.pos.y === container.pos.y) {
-                creep.harvest(source);
-                logger.info(creep.name + ': Harvesting source at ' + source.pos);
+        if (creep.store.getFreeCapacity() > 0) {
+            if (creep.pos.isEqualTo(container.pos)) {
+                let result = creep.harvest(source);
+                if (result === OK) {
+                    logger.info(creep.name + ': Harvesting source ' + source.id);
+                } else {
+                    logger.warn(creep.name + ': Harvesting failed: ' + result);
+                }
             } else {
-                creep.moveTo(container.pos.x, container.pos.y, { visualizePathStyle: { stroke: '#ffaa00' } });
+                creep.moveTo(container, { visualizePathStyle: { stroke: '#ffaa00' } });
                 logger.info(creep.name + ': Moving to container at ' + container.pos);
             }
-        } else if (constructionSite) {
-            if (creep.store.getFreeCapacity() > 0) {
-                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
-                    logger.info(creep.name + ': Moving to source at ' + source.pos);
-                } else {
-                    logger.info(creep.name + ': Harvesting source at ' + source.pos + ' for construction');
-                }
+        } else {
+            let result = creep.transfer(container, RESOURCE_ENERGY);
+            if (result === OK) {
+                logger.info(creep.name + ': Transferring to container ' + container.id);
+            } else if (result === ERR_NOT_IN_RANGE) {
+                creep.moveTo(container, { visualizePathStyle: { stroke: '#ffffff' } });
             } else {
-                if (creep.build(constructionSite) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(constructionSite, { visualizePathStyle: { stroke: '#0000ff' } });
-                    logger.info(creep.name + ': Moving to build container at ' + constructionSite.pos);
-                } else {
-                    logger.info(creep.name + ': Building container at ' + constructionSite.pos);
-                }
+                logger.warn(creep.name + ': Transfer failed: ' + result);
+            }
+        }
+    } else if (creep.memory.task === 'constructContainer') {
+        let source = Game.getObjectById(creep.memory.targetId);
+        if (!source) {
+            logger.warn(creep.name + ': Ungültige Quelle, Aufgabe zurückgesetzt');
+            delete creep.memory.task;
+            delete creep.memory.targetId;
+            return;
+        }
+
+        let site = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+        if (!site && creep.store[RESOURCE_ENERGY] > 0) {
+            let result = creep.room.createConstructionSite(source.pos.x, source.pos.y + 1, STRUCTURE_CONTAINER);
+            if (result === OK) {
+                logger.info(creep.name + ': Creating container construction site near source ' + source.id);
+            } else {
+                logger.warn(creep.name + ': Failed to create container site: ' + result);
+            }
+        } else if (site) {
+            if (creep.build(site) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(site, { visualizePathStyle: { stroke: '#0000ff' } });
+                logger.info(creep.name + ': Moving to build container at ' + site.pos);
+            } else {
+                logger.info(creep.name + ': Building container at ' + site.pos);
             }
         } else {
             if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
-                logger.info(creep.name + ': Moving to source at ' + source.pos);
+                logger.info(creep.name + ': Moving to source ' + source.id + ' to gather energy');
             } else {
-                logger.info(creep.name + ': Harvesting source at ' + source.pos);
+                logger.info(creep.name + ': Harvesting source ' + source.id + ' for construction');
             }
         }
-    } else {
-        let target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
-            filter: (s) => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_CONTAINER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        });
-        if (target) {
-            if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+    } else if (creep.memory.task === 'repair') {
+        let target = Game.getObjectById(creep.memory.targetId);
+        if (!target) {
+            logger.warn(creep.name + ': Ungültiges Reparaturziel, Aufgabe zurückgesetzt');
+            delete creep.memory.task;
+            delete creep.memory.targetId;
+            return;
+        }
+
+        if (creep.store[RESOURCE_ENERGY] > 0) {
+            if (creep.repair(target) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
-                logger.info(creep.name + ': Moving to transfer energy to ' + target.structureType + ' at ' + target.pos);
+                logger.info(creep.name + ': Moving to repair ' + target.structureType + ' at ' + target.pos);
             } else {
-                logger.info(creep.name + ': Transferring energy to ' + target.structureType + ' at ' + target.pos);
+                logger.info(creep.name + ': Repairing ' + target.structureType + ' at ' + target.pos);
             }
         } else {
-            logger.warn(creep.name + ': No valid energy target found');
+            let source = creep.pos.findClosestByPath(FIND_SOURCES);
+            if (source && creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(source, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Moving to source ' + source.id + ' for energy');
+            }
+        }
+    } else if (creep.memory.task === 'idle') {
+        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+        if (spawn) {
+            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+            logger.info(creep.name + ': Idle, moving to spawn ' + spawn.id);
         }
     }
 };

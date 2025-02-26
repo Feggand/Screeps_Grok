@@ -4,7 +4,6 @@ var logger = require('logger');
 var taskManager = {
     getWorkerTasks: function(room) {
         let tasks = [];
-        // (Unverändert, wie zuvor)
         let damagedWalls = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.0003
         });
@@ -56,7 +55,6 @@ var taskManager = {
     getHaulerTasks: function(room) {
         let tasks = [];
 
-        // Energie liefern an Controller-Container (höchste Priorität)
         let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         })[0];
@@ -64,11 +62,10 @@ var taskManager = {
             tasks.push({
                 type: 'deliver',
                 target: controllerContainer.id,
-                priority: 12 // Höchste Priorität für Controller-Container
+                priority: 12
             });
         }
 
-        // Energie liefern an Spawns und Extensions
         let energyTargets = room.find(FIND_STRUCTURES, {
             filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
@@ -88,7 +85,6 @@ var taskManager = {
             });
         });
 
-        // Energie liefern an Storage (niedrigere Priorität)
         let storageDeliver = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
@@ -96,13 +92,14 @@ var taskManager = {
             tasks.push({
                 type: 'deliver',
                 target: store.id,
-                priority: 4 // Niedriger als Controller-Container und Spawns/Extensions
+                priority: 4
             });
         });
 
-        // Energie sammeln aus Containern
         let containers = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            filter: s => s.structureType === STRUCTURE_CONTAINER && 
+                         s.store[RESOURCE_ENERGY] > 0 && 
+                         (!room.controller || s.pos.getRangeTo(room.controller) > 3)
         });
         containers.forEach(container => {
             let energyPercentage = container.store[RESOURCE_ENERGY] / container.store.getCapacity(RESOURCE_ENERGY);
@@ -113,7 +110,6 @@ var taskManager = {
             });
         });
 
-        // Energie sammeln aus dropped resources
         let droppedEnergy = room.find(FIND_DROPPED_RESOURCES, {
             filter: r => r.resourceType === RESOURCE_ENERGY
         });
@@ -125,7 +121,6 @@ var taskManager = {
             });
         });
 
-        // Energie sammeln aus Tombstones
         let tombstones = room.find(FIND_TOMBSTONES, {
             filter: t => t.store[RESOURCE_ENERGY] > 0
         });
@@ -137,7 +132,6 @@ var taskManager = {
             });
         });
 
-        // Energie sammeln aus Storage (niedrige Priorität)
         let storageForCollect = room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
         });
@@ -154,14 +148,68 @@ var taskManager = {
         return tasks;
     },
 
+    getHarvesterTasks: function(room) {
+        let tasks = [];
+        let assignedSources = _.map(_.filter(Game.creeps, c => c.memory.role === 'harvester' && c.memory.task === 'harvest'), 'memory.targetId');
+
+        // Aufgabe: Energie ernten von Quellen mit Containern
+        let sources = room.find(FIND_SOURCES);
+        sources.forEach(source => {
+            let container = source.pos.findInRange(FIND_STRUCTURES, 1, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            })[0];
+            if (container) {
+                let harvestersAssigned = assignedSources.filter(id => id === source.id).length;
+                let priority = harvestersAssigned === 0 ? 10 : 5; // Höchste Priorität für unbesetzte Quellen
+                tasks.push({
+                    type: 'harvest',
+                    target: source.id,
+                    containerId: container.id,
+                    priority: priority
+                });
+            }
+        });
+
+        // Aufgabe: Container bauen bei Quellen ohne Container
+        sources.forEach(source => {
+            let container = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            let site = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            if (!container && !site) {
+                tasks.push({
+                    type: 'constructContainer',
+                    target: source.id,
+                    priority: 8
+                });
+            }
+        });
+
+        // Aufgabe: Container reparieren
+        let containers = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax
+        });
+        containers.forEach(container => {
+            tasks.push({
+                type: 'repair',
+                target: container.id,
+                priority: 6
+            });
+        });
+
+        tasks.sort((a, b) => b.priority - a.priority);
+        logger.info('Harvester tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
+        return tasks;
+    },
+
     assignTask: function(creep, tasks) {
         if (tasks.length > 0) {
             creep.memory.task = tasks[0].type;
             creep.memory.targetId = tasks[0].target;
+            if (tasks[0].containerId) creep.memory.containerId = tasks[0].containerId;
             logger.info(creep.name + ': Aufgabe zugewiesen - ' + tasks[0].type + ' auf ' + tasks[0].target);
         } else {
             creep.memory.task = 'idle';
             creep.memory.targetId = null;
+            delete creep.memory.containerId;
             logger.info(creep.name + ': Keine Aufgaben verfügbar, idle');
         }
     }
