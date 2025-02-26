@@ -53,7 +53,26 @@ module.exports.run = function(creep) {
         if (creep.memory.working) {
             let deliverTasks = tasks.filter(t => t.type === 'deliver');
             if (deliverTasks.length > 0) {
-                taskManager.assignTask(creep, deliverTasks);
+                // Spezielle Behandlung für Extensions und Spawns: Nächstgelegenes Ziel wählen
+                let extensionSpawnTasks = deliverTasks.filter(t => {
+                    let target = Game.getObjectById(t.target);
+                    return target && (target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN);
+                });
+                
+                if (extensionSpawnTasks.length > 0) {
+                    // Sortiere nach Entfernung zum Hauler
+                    extensionSpawnTasks.sort((a, b) => {
+                        let targetA = Game.getObjectById(a.target);
+                        let targetB = Game.getObjectById(b.target);
+                        let distA = creep.pos.getRangeTo(targetA);
+                        let distB = creep.pos.getRangeTo(targetB);
+                        return distA - distB;
+                    });
+                    taskManager.assignTask(creep, [extensionSpawnTasks[0]]); // Nimm das nächstgelegene Ziel
+                } else {
+                    // Für andere Ziele (z. B. Türme, Storage) normale Priorität beibehalten
+                    taskManager.assignTask(creep, deliverTasks);
+                }
             } else {
                 creep.memory.task = 'idle';
                 creep.memory.targetId = null;
