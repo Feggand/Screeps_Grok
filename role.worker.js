@@ -9,7 +9,6 @@ module.exports.run = function(creep) {
         if (creep.memory.working) {
             creep.memory.working = false;
             logger.info(creep.name + ': Wechselt zu Energie sammeln (keine Energie).');
-            // Reset task only if previously working
             if (creep.memory.task !== 'idle') {
                 delete creep.memory.task;
                 delete creep.memory.targetId;
@@ -35,9 +34,9 @@ module.exports.run = function(creep) {
             if (creep.memory.task === 'repair') {
                 taskValid = target.hits < target.hitsMax;
             } else if (creep.memory.task === 'construct') {
-                taskValid = true; // Baustellen bleiben gültig, solange sie existieren
+                taskValid = true;
             } else if (creep.memory.task === 'upgrade') {
-                taskValid = true; // Controller-Upgraden ist immer möglich
+                taskValid = true;
             }
             logger.info(creep.name + ': Aufgabe ' + creep.memory.task + ' validiert, gültig: ' + taskValid);
         } else {
@@ -104,16 +103,22 @@ module.exports.run = function(creep) {
             }
         }
     } else {
-        // Wähle die nächstgelegene Energiequelle: Controller-Container oder Storage
+        // Wähle die nächstgelegene Energiequelle: Receiver-Link, Controller-Container oder Storage
         let controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
         })[0];
         let storage = creep.room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
         })[0];
+        let receiverLink = creep.room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_LINK && s.pos.getRangeTo(controllerContainer) <= 2 && s.store[RESOURCE_ENERGY] > 0
+        })[0];
 
         let energySource = null;
-        if (controllerContainer && storage) {
+        if (receiverLink) {
+            // Receiver-Link hat höchste Priorität
+            energySource = receiverLink;
+        } else if (controllerContainer && storage) {
             let distToController = creep.pos.getRangeTo(controllerContainer);
             let distToStorage = creep.pos.getRangeTo(storage);
             energySource = (distToController < distToStorage) ? controllerContainer : storage;

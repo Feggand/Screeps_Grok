@@ -4,7 +4,7 @@ var logger = require('logger');
 
 module.exports.run = function(creep) {
     // Arbeitsstatus aktualisieren
-    const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für andere Ziele (außer Extensions/Spawns)
+    const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für niedrigere Prioritäten
     const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
 
     if (creep.store[RESOURCE_ENERGY] === 0) {
@@ -16,35 +16,24 @@ module.exports.run = function(creep) {
                 delete creep.memory.targetId;
             }
         }
-    } else {
-        // Prüfe, ob es deliver-Aufgaben für Extensions oder Spawns gibt
-        let tasks = taskManager.getHaulerTasks(creep.room);
-        let deliverTasks = tasks.filter(t => t.type === 'deliver');
-        let hasExtensionSpawnTask = deliverTasks.some(t => {
-            let target = Game.getObjectById(t.target);
-            return target && (target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN);
-        });
-
-        if (hasExtensionSpawnTask && creep.store[RESOURCE_ENERGY] > 0) {
-            // Sofort liefern, wenn Extensions oder Spawns verfügbar sind und Energie vorhanden ist
-            if (!creep.memory.working) {
-                creep.memory.working = true;
-                logger.info(creep.name + ': Wechselt zu Liefern (Energie für Extensions/Spawn verfügbar)');
-                if (creep.memory.task === 'collect') {
-                    delete creep.memory.task;
-                    delete creep.memory.targetId;
-                }
+    } else if (creep.store.getFreeCapacity() === 0 || 
+               (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
+        if (!creep.memory.working) {
+            creep.memory.working = true;
+            logger.info(creep.name + ': Wechselt zu Liefern (voll oder über Schwellwert)');
+            if (creep.memory.task === 'collect') {
+                delete creep.memory.task;
+                delete creep.memory.targetId;
             }
-        } else if (creep.store.getFreeCapacity() === 0 || 
-                   (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
-            // Für andere Ziele nur bei vollem Laderaum oder über Schwellwert liefern
-            if (!creep.memory.working) {
-                creep.memory.working = true;
-                logger.info(creep.name + ': Wechselt zu Liefern (voll oder über Schwellwert)');
-                if (creep.memory.task === 'collect') {
-                    delete creep.memory.task;
-                    delete creep.memory.targetId;
-                }
+        }
+    } else if (creep.store[RESOURCE_ENERGY] > 0) {
+        // Sofort liefern, wenn Energie vorhanden ist (für hohe Prioritäten wie Extensions/Spawns/Link)
+        if (!creep.memory.working) {
+            creep.memory.working = true;
+            logger.info(creep.name + ': Wechselt zu Liefern (Energie vorhanden)');
+            if (creep.memory.task === 'collect') {
+                delete creep.memory.task;
+                delete creep.memory.targetId;
             }
         }
     }
@@ -78,24 +67,8 @@ module.exports.run = function(creep) {
         if (creep.memory.working) {
             let deliverTasks = tasks.filter(t => t.type === 'deliver');
             if (deliverTasks.length > 0) {
-                // Spezielle Behandlung für Extensions und Spawns: Nächstgelegenes Ziel wählen
-                let extensionSpawnTasks = deliverTasks.filter(t => {
-                    let target = Game.getObjectById(t.target);
-                    return target && (target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN);
-                });
-                
-                if (extensionSpawnTasks.length > 0) {
-                    extensionSpawnTasks.sort((a, b) => {
-                        let targetA = Game.getObjectById(a.target);
-                        let targetB = Game.getObjectById(b.target);
-                        let distA = creep.pos.getRangeTo(targetA);
-                        let distB = creep.pos.getRangeTo(targetB);
-                        return distA - distB;
-                    });
-                    taskManager.assignTask(creep, [extensionSpawnTasks[0]]);
-                } else {
-                    taskManager.assignTask(creep, deliverTasks);
-                }
+                // Wähle die höchstpriorisierte Aufgabe (sortiert durch taskManager)
+                taskManager.assignTask(creep, deliverTasks);
             } else {
                 creep.memory.task = 'idle';
                 creep.memory.targetId = null;
@@ -105,9 +78,7 @@ module.exports.run = function(creep) {
             let collectTasks = tasks.filter(t => t.type === 'collect');
             if (collectTasks.length > 0) {
                 let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
-                let haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
 
-                // Spezielle Behandlung für Dropped Resources und Tombsones
                 let lootTasks = collectTasks.filter(t => {
                     let target = Game.getObjectById(t.target);
                     return target && (target instanceof Resource || target instanceof Tombstone);
@@ -132,7 +103,6 @@ module.exports.run = function(creep) {
                     if (selectedTask) {
                         taskManager.assignTask(creep, [selectedTask]);
                     } else {
-                        // Wenn kein Loot-Ziel mehr benötigt wird, prüfe Quellen-Container
                         let sourceContainerTasks = collectTasks.filter(t => {
                             let target = Game.getObjectById(t.target);
                             return target && target.structureType === STRUCTURE_CONTAINER && 
@@ -158,7 +128,6 @@ module.exports.run = function(creep) {
                             if (selectedContainerTask) {
                                 taskManager.assignTask(creep, [selectedContainerTask]);
                             } else {
-                                // Wenn kein Quellen-Container mehr benötigt wird, andere Collect-Aufgaben nutzen
                                 let otherCollectTasks = collectTasks.filter(t => {
                                     let target = Game.getObjectById(t.target);
                                     return target && !(target instanceof Resource || target instanceof Tombstone) && 
@@ -167,7 +136,6 @@ module.exports.run = function(creep) {
                                 if (otherCollectTasks.length > 0) {
                                     taskManager.assignTask(creep, otherCollectTasks);
                                 } else {
-                                    // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
                                     if (creep.store[RESOURCE_ENERGY] > 0) {
                                         creep.memory.working = true;
                                         let deliverTasks = tasks.filter(t => t.type === 'deliver');
@@ -186,7 +154,6 @@ module.exports.run = function(creep) {
                                 }
                             }
                         } else {
-                            // Andere Collect-Aufgaben (z. B. Storage)
                             let otherCollectTasks = collectTasks.filter(t => {
                                 let target = Game.getObjectById(t.target);
                                 return target && !(target instanceof Resource || target instanceof Tombstone);
@@ -194,7 +161,6 @@ module.exports.run = function(creep) {
                             if (otherCollectTasks.length > 0) {
                                 taskManager.assignTask(creep, otherCollectTasks);
                             } else {
-                                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
                                 if (creep.store[RESOURCE_ENERGY] > 0) {
                                     creep.memory.working = true;
                                     let deliverTasks = tasks.filter(t => t.type === 'deliver');
@@ -214,7 +180,6 @@ module.exports.run = function(creep) {
                         }
                     }
                 } else {
-                    // Keine Loot-Ziele, prüfe Quellen-Container direkt
                     let sourceContainerTasks = collectTasks.filter(t => {
                         let target = Game.getObjectById(t.target);
                         return target && target.structureType === STRUCTURE_CONTAINER && 
@@ -247,7 +212,6 @@ module.exports.run = function(creep) {
                             if (otherCollectTasks.length > 0) {
                                 taskManager.assignTask(creep, otherCollectTasks);
                             } else {
-                                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
                                 if (creep.store[RESOURCE_ENERGY] > 0) {
                                     creep.memory.working = true;
                                     let deliverTasks = tasks.filter(t => t.type === 'deliver');
@@ -270,7 +234,6 @@ module.exports.run = function(creep) {
                     }
                 }
             } else {
-                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
                 if (creep.store[RESOURCE_ENERGY] > 0) {
                     creep.memory.working = true;
                     let deliverTasks = tasks.filter(t => t.type === 'deliver');

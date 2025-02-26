@@ -55,6 +55,32 @@ var taskManager = {
     getHaulerTasks: function(room) {
         let tasks = [];
 
+        // Energie liefern an Spawns, Extensions, Türme und Sender-Link
+        let energyTargets = room.find(FIND_STRUCTURES, {
+            filter: (structure) => (structure.structureType === STRUCTURE_SPAWN || 
+                                    structure.structureType === STRUCTURE_EXTENSION || 
+                                    structure.structureType === STRUCTURE_TOWER || 
+                                    (structure.structureType === STRUCTURE_LINK && structure.pos.getRangeTo(room.storage) <= 2)) && 
+                                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+        });
+        energyTargets.forEach(target => {
+            let priority = 0;
+            if (target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.5) {
+                priority = 14;
+            } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
+                priority = 13;
+            } else if (target.structureType === STRUCTURE_LINK) {
+                priority = 12.5; // Sender-Link zwischen Spawns/Extensions (13) und Controller-Container (12)
+            } else {
+                priority = 5;
+            }
+            tasks.push({
+                type: 'deliver',
+                target: target.id,
+                priority: priority
+            });
+        });
+
         // Energie liefern an Controller-Container
         let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -66,26 +92,6 @@ var taskManager = {
                 priority: 12
             });
         }
-
-        // Energie liefern an Spawns, Extensions und Türme
-        let energyTargets = room.find(FIND_STRUCTURES, {
-            filter: (structure) => (structure.structureType === STRUCTURE_SPAWN || structure.structureType === STRUCTURE_EXTENSION || structure.structureType === STRUCTURE_TOWER) && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-        });
-        energyTargets.forEach(target => {
-            let priority = 0;
-            if (target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.7) {
-                priority = 14;
-            } else if (target.structureType === STRUCTURE_SPAWN || target.structureType === STRUCTURE_EXTENSION) {
-                priority = 13;
-            } else {
-                priority = 5;
-            }
-            tasks.push({
-                type: 'deliver',
-                target: target.id,
-                priority: priority
-            });
-        });
 
         // Energie liefern an Storage
         let storageDeliver = room.find(FIND_STRUCTURES, {
@@ -207,7 +213,6 @@ var taskManager = {
     getTowerTasks: function(room) {
         let tasks = [];
 
-        // Angriff auf Feinde
         let hostiles = room.find(FIND_HOSTILE_CREEPS);
         hostiles.forEach(hostile => {
             tasks.push({
@@ -217,7 +222,6 @@ var taskManager = {
             });
         });
 
-        // Heilung verletzter Creeps
         let damagedCreeps = room.find(FIND_MY_CREEPS, { filter: (creep) => creep.hits < creep.hitsMax });
         damagedCreeps.forEach(creep => {
             tasks.push({
@@ -227,7 +231,6 @@ var taskManager = {
             });
         });
 
-        // Reparatur von Straßen und Containern
         let damagedNonWalls = room.find(FIND_STRUCTURES, {
             filter: (structure) => (structure.structureType === STRUCTURE_ROAD || structure.structureType === STRUCTURE_CONTAINER) && structure.hits < structure.hitsMax
         });
@@ -239,7 +242,6 @@ var taskManager = {
             });
         });
 
-        // Reparatur von Wänden
         let damagedWalls = room.find(FIND_STRUCTURES, {
             filter: (structure) => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003
         });

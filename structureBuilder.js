@@ -26,6 +26,9 @@ module.exports = {
         if (room.controller.level >= 4) {
             this.buildStorage(room, spawn);
         }
+        if (room.controller.level >= 5) {
+            this.buildLinks(room);
+        }
     },
 
     buildExtensions: function(room, spawn) {
@@ -43,7 +46,7 @@ module.exports = {
         logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);
         if (extensions + extensionSites < maxExtensions && room.energyAvailable >= 50) {
             let placed = 0;
-            const maxDistance = 5; // Maximaler Radius von 5 Feldern vom Spawn
+            const maxDistance = 5;
 
             for (let dx = -maxDistance; dx <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dx++) {
                 for (let dy = -maxDistance; dy <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dy++) {
@@ -169,16 +172,15 @@ module.exports = {
     buildTowers: function(room, spawn) {
         let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
         let towerSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
-        let maxTowers = room.controller.level >= 5 ? 2 : 1; // 2 Türme ab Level 5, sonst 1
+        let maxTowers = room.controller.level >= 5 ? 2 : 1;
 
         logger.info('Towers in ' + room.name + ': ' + towers + ' built, ' + towerSites + ' sites, max ' + maxTowers + ', energy available: ' + room.energyAvailable);
         if (towers + towerSites < maxTowers && room.energyAvailable >= 600) {
-            const maxDistance = 5; // Maximaler Radius von 5 Feldern vom Spawn
+            const maxDistance = 5;
             let placed = false;
 
             for (let dx = -maxDistance; dx <= maxDistance && !placed; dx++) {
                 for (let dy = -maxDistance; dy <= maxDistance && !placed; dy++) {
-                    // Überspringe Positionen zu nah am Spawn (weniger als 2 Felder)
                     if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue;
 
                     let x = spawn.pos.x + dx;
@@ -189,7 +191,7 @@ module.exports = {
                         if (this.canPlaceStructure(room, x, y)) {
                             room.createConstructionSite(x, y, STRUCTURE_TOWER);
                             logger.info('Placed tower at ' + x + ',' + y + ' in ' + room.name);
-                            placed = true; // Nur einen Turm pro Tick platzieren
+                            placed = true;
                         } else {
                             logger.warn('Position ' + x + ',' + y + ' blocked for tower in ' + room.name);
                         }
@@ -202,6 +204,67 @@ module.exports = {
             }
         } else {
             logger.info('No new towers needed in ' + room.name + ' or insufficient energy/conditions not met');
+        }
+    },
+
+    buildLinks: function(room) {
+        let links = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
+        let linkSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
+        let maxLinks = room.controller.level >= 5 ? 2 : 0;
+
+        logger.info('Links in ' + room.name + ': ' + links + ' built, ' + linkSites + ' sites, max ' + maxLinks + ', energy available: ' + room.energyAvailable);
+        if (links + linkSites < maxLinks && room.energyAvailable >= 300) {
+            let placed = false;
+
+            // Sender-Link nahe dem Storage
+            let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+            if (!placed && storage) {
+                const storagePos = storage.pos;
+                for (let dx = -1; dx <= 1 && !placed; dx++) {
+                    for (let dy = -1; dy <= 1 && !placed; dy++) {
+                        if (dx === 0 && dy === 0) continue; // Überspringe die Storage-Position selbst
+                        let x = storagePos.x + dx;
+                        let y = storagePos.y + dy;
+                        if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                            room.createConstructionSite(x, y, STRUCTURE_LINK);
+                            logger.info('Placed storage link (sender) at ' + x + ',' + y + ' in ' + room.name);
+                            placed = true;
+                        } else {
+                            logger.warn('Position ' + x + ',' + y + ' blocked for storage link in ' + room.name);
+                        }
+                    }
+                }
+            }
+
+            // Receiver-Link nahe dem Controller-Container
+            if (links + linkSites === 1 && !placed) { // Nur platzieren, wenn der erste Link existiert
+                let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+                    filter: s => s.structureType === STRUCTURE_CONTAINER
+                })[0];
+                if (controllerContainer) {
+                    const containerPos = controllerContainer.pos;
+                    for (let dx = -1; dx <= 1 && !placed; dx++) {
+                        for (let dy = -1; dy <= 1 && !placed; dy++) {
+                            if (dx === 0 && dy === 0) continue; // Überspringe die Container-Position selbst
+                            let x = containerPos.x + dx;
+                            let y = containerPos.y + dy;
+                            if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                                room.createConstructionSite(x, y, STRUCTURE_LINK);
+                                logger.info('Placed controller link (receiver) at ' + x + ',' + y + ' in ' + room.name);
+                                placed = true;
+                            } else {
+                                logger.warn('Position ' + x + ',' + y + ' blocked for controller link in ' + room.name);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!placed) {
+                logger.warn('No valid position found for new link in ' + room.name);
+            }
+        } else {
+            logger.info('No new links needed in ' + room.name + ' or insufficient energy/conditions not met');
         }
     },
 

@@ -4,6 +4,7 @@ var structureBuilder = require('structureBuilder');
 var memoryManager = require('memoryManager');
 var logger = require('logger');
 var roleTower = require('role.tower');
+var roleLink = require('role.link');
 
 module.exports.loop = function () {
     logger.info('Main loop running');
@@ -32,6 +33,12 @@ module.exports.loop = function () {
         structureBuilder.buildStructures(room);
         structureBuilder.buildControllerContainer(room); // Neue Zeile für Container-Platzierung
         logger.info(`Room ${roomName} processed`);
+    }
+
+    for (var roomName in Game.rooms) {
+        var room = Game.rooms[roomName];
+        structureBuilder.buildStructures(room);
+        roleLink.run(); // Füge dies hinzu
     }
 
     creepManager.runCreeps();
