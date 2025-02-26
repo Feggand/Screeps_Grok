@@ -104,21 +104,35 @@ module.exports.run = function(creep) {
             }
         }
     } else {
-        // Bevorzuge den Container beim Controller, falls vorhanden
+        // Wähle die nächstgelegene Energiequelle: Controller-Container oder Storage
         let controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
         })[0];
+        let storage = creep.room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
+        })[0];
 
-        if (controllerContainer) {
-            if (creep.withdraw(controllerContainer, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(controllerContainer, { visualizePathStyle: { stroke: '#ffaa00' } });
-                logger.info(creep.name + ': Bewegt sich zu Controller-Container ' + controllerContainer.id + ' zum Sammeln');
+        let energySource = null;
+        if (controllerContainer && storage) {
+            let distToController = creep.pos.getRangeTo(controllerContainer);
+            let distToStorage = creep.pos.getRangeTo(storage);
+            energySource = (distToController < distToStorage) ? controllerContainer : storage;
+        } else if (controllerContainer) {
+            energySource = controllerContainer;
+        } else if (storage) {
+            energySource = storage;
+        }
+
+        if (energySource) {
+            if (creep.withdraw(energySource, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(energySource, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Bewegt sich zu ' + energySource.structureType + ' ' + energySource.id + ' zum Sammeln');
             } else {
-                logger.info(creep.name + ': Sammelt Energie aus Controller-Container ' + controllerContainer.id);
+                logger.info(creep.name + ': Sammelt Energie aus ' + energySource.structureType + ' ' + energySource.id);
             }
         } else {
-            // Wenn kein Controller-Container verfügbar, sammle Energie und prüfe danach Aufgaben
-            logger.info(creep.name + ': Kein Controller-Container verfügbar, sammelt Energie via resourceManager');
+            // Wenn keine direkte Quelle verfügbar, sammle via resourceManager
+            logger.info(creep.name + ': Keine direkte Energiequelle verfügbar, sammelt via resourceManager');
             resourceManager.collectEnergy(creep, homeRoom);
             // Nach dem Energiesammeln Aufgabe neu prüfen
             if (creep.store[RESOURCE_ENERGY] > 0) {

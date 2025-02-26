@@ -15,7 +15,7 @@ module.exports = {
         if (room.controller.level >= 2) {
             this.buildExtensions(room, spawn);
             this.buildContainers(room);
-            this.buildControllerContainer(room); // Neue Funktion hinzugefügt
+            this.buildControllerContainer(room);
             this.buildRoads(room, spawn);
         }
         if (room.controller.level >= 3) {
@@ -31,35 +31,46 @@ module.exports = {
     buildExtensions: function(room, spawn) {
         let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
         let extensionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
-        let maxExtensions = room.controller.level === 2 ? 5 : room.controller.level === 3 ? 10 : 20;
+        let maxExtensions;
+        switch (room.controller.level) {
+            case 2: maxExtensions = 5; break;
+            case 3: maxExtensions = 10; break;
+            case 4: maxExtensions = 20; break;
+            case 5: maxExtensions = 30; break;
+            default: maxExtensions = 20; // Fallback für höhere Level
+        }
 
         logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);
         if (extensions + extensionSites < maxExtensions && room.energyAvailable >= 50) {
-            let positions = [
-                // Neue Positionen, weiter vom Spawn entfernt
-                { x: spawn.pos.x - 5, y: spawn.pos.y - 5 }, { x: spawn.pos.x + 5, y: spawn.pos.y - 5 },
-                { x: spawn.pos.x - 5, y: spawn.pos.y + 5 }, { x: spawn.pos.x + 5, y: spawn.pos.y + 5 },
-                { x: spawn.pos.x - 6, y: spawn.pos.y }, { x: spawn.pos.x + 6, y: spawn.pos.y },
-                { x: spawn.pos.x, y: spawn.pos.y - 6 }, { x: spawn.pos.x, y: spawn.pos.y + 6 },
-                { x: spawn.pos.x - 4, y: spawn.pos.y - 4 }, { x: spawn.pos.x + 4, y: spawn.pos.y - 4 },
-                { x: spawn.pos.x - 4, y: spawn.pos.y + 4 }, { x: spawn.pos.x + 4, y: spawn.pos.y + 4 },
-                { x: spawn.pos.x - 5, y: spawn.pos.y }, { x: spawn.pos.x + 5, y: spawn.pos.y },
-                { x: spawn.pos.x, y: spawn.pos.y - 5 }, { x: spawn.pos.x, y: spawn.pos.y + 5 }
-            ];
+            let placed = 0;
+            const maxDistance = 5; // Maximaler Radius von 5 Feldern vom Spawn
 
-            for (let pos of positions) {
-                if (this.canPlaceStructure(room, pos.x, pos.y)) {
-                    if (extensions + extensionSites < maxExtensions) {
-                        room.createConstructionSite(pos.x, pos.y, STRUCTURE_EXTENSION);
-                        logger.info('Placed extension at ' + pos.x + ',' + pos.y + ' in ' + room.name);
-                        extensionSites++;
+            for (let dx = -maxDistance; dx <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dx++) {
+                for (let dy = -maxDistance; dy <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dy++) {
+                    // Überspringe Positionen innerhalb von 2 Feldern, um Platz für Straßen und Creeps zu lassen
+                    if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) continue;
+
+                    let x = spawn.pos.x + dx;
+                    let y = spawn.pos.y + dy;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Nur Positionen innerhalb des gewünschten Radius (3-5 Felder)
+                    if (distance > 2 && distance <= maxDistance && x >= 0 && x < 50 && y >= 0 && y < 50) {
+                        if (this.canPlaceStructure(room, x, y)) {
+                            room.createConstructionSite(x, y, STRUCTURE_EXTENSION);
+                            logger.info('Placed extension at ' + x + ',' + y + ' in ' + room.name);
+                            placed++;
+                        } else {
+                            logger.warn('Position ' + x + ',' + y + ' blocked for extension in ' + room.name);
+                        }
                     }
-                } else {
-                    logger.warn('Position ' + pos.x + ',' + pos.y + ' blocked for extension in ' + room.name);
                 }
             }
-            if (extensions + extensionSites >= maxExtensions) {
+
+            if (extensions + extensionSites + placed >= maxExtensions) {
                 logger.info('Max extensions reached in ' + room.name);
+            } else if (placed === 0) {
+                logger.warn('No valid positions found for new extensions in ' + room.name);
             }
         } else {
             logger.info('No new extensions needed in ' + room.name + ' or insufficient energy');
@@ -95,7 +106,6 @@ module.exports = {
     buildControllerContainer: function(room) {
         if (!room.controller || !room.controller.my) return;
 
-        // Prüfe, ob schon ein Container beim Controller existiert
         let containersNearController = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER
         });
@@ -108,7 +118,6 @@ module.exports = {
             return;
         }
 
-        // Finde eine geeignete Position in der Nähe des Controllers (max 3 Felder entfernt)
         let pos = null;
         for (let dx = -3; dx <= 3 && !pos; dx++) {
             for (let dy = -3; dy <= 3 && !pos; dy++) {

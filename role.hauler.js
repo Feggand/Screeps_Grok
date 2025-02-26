@@ -4,6 +4,9 @@ var logger = require('logger');
 
 module.exports.run = function(creep) {
     // Arbeitsstatus aktualisieren
+    const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für andere Ziele (außer Extensions/Spawns)
+    const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
+
     if (creep.store[RESOURCE_ENERGY] === 0) {
         if (creep.memory.working) {
             creep.memory.working = false;
@@ -13,13 +16,35 @@ module.exports.run = function(creep) {
                 delete creep.memory.targetId;
             }
         }
-    } else if (creep.store.getFreeCapacity() === 0) {
-        if (!creep.memory.working) {
-            creep.memory.working = true;
-            logger.info(creep.name + ': Wechselt zu Liefern (voll mit Energie)');
-            if (creep.memory.task === 'collect') {
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+    } else {
+        // Prüfe, ob es deliver-Aufgaben für Extensions oder Spawns gibt
+        let tasks = taskManager.getHaulerTasks(creep.room);
+        let deliverTasks = tasks.filter(t => t.type === 'deliver');
+        let hasExtensionSpawnTask = deliverTasks.some(t => {
+            let target = Game.getObjectById(t.target);
+            return target && (target.structureType === STRUCTURE_EXTENSION || target.structureType === STRUCTURE_SPAWN);
+        });
+
+        if (hasExtensionSpawnTask && creep.store[RESOURCE_ENERGY] > 0) {
+            // Sofort liefern, wenn Extensions oder Spawns verfügbar sind und Energie vorhanden ist
+            if (!creep.memory.working) {
+                creep.memory.working = true;
+                logger.info(creep.name + ': Wechselt zu Liefern (Energie für Extensions/Spawn verfügbar)');
+                if (creep.memory.task === 'collect') {
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
+                }
+            }
+        } else if (creep.store.getFreeCapacity() === 0 || 
+                   (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
+            // Für andere Ziele nur bei vollem Laderaum oder über Schwellwert liefern
+            if (!creep.memory.working) {
+                creep.memory.working = true;
+                logger.info(creep.name + ': Wechselt zu Liefern (voll oder über Schwellwert)');
+                if (creep.memory.task === 'collect') {
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
+                }
             }
         }
     }
@@ -142,9 +167,22 @@ module.exports.run = function(creep) {
                                 if (otherCollectTasks.length > 0) {
                                     taskManager.assignTask(creep, otherCollectTasks);
                                 } else {
-                                    creep.memory.task = 'idle';
-                                    creep.memory.targetId = null;
-                                    logger.info(creep.name + ': Keine weiteren Sammelquellen benötigt, setze auf idle');
+                                    // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
+                                    if (creep.store[RESOURCE_ENERGY] > 0) {
+                                        creep.memory.working = true;
+                                        let deliverTasks = tasks.filter(t => t.type === 'deliver');
+                                        if (deliverTasks.length > 0) {
+                                            taskManager.assignTask(creep, deliverTasks);
+                                        } else {
+                                            creep.memory.task = 'idle';
+                                            creep.memory.targetId = null;
+                                            logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
+                                        }
+                                    } else {
+                                        creep.memory.task = 'idle';
+                                        creep.memory.targetId = null;
+                                        logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
+                                    }
                                 }
                             }
                         } else {
@@ -156,9 +194,22 @@ module.exports.run = function(creep) {
                             if (otherCollectTasks.length > 0) {
                                 taskManager.assignTask(creep, otherCollectTasks);
                             } else {
-                                creep.memory.task = 'idle';
-                                creep.memory.targetId = null;
-                                logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
+                                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
+                                if (creep.store[RESOURCE_ENERGY] > 0) {
+                                    creep.memory.working = true;
+                                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
+                                    if (deliverTasks.length > 0) {
+                                        taskManager.assignTask(creep, deliverTasks);
+                                    } else {
+                                        creep.memory.task = 'idle';
+                                        creep.memory.targetId = null;
+                                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
+                                    }
+                                } else {
+                                    creep.memory.task = 'idle';
+                                    creep.memory.targetId = null;
+                                    logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
+                                }
                             }
                         }
                     }
@@ -196,9 +247,22 @@ module.exports.run = function(creep) {
                             if (otherCollectTasks.length > 0) {
                                 taskManager.assignTask(creep, otherCollectTasks);
                             } else {
-                                creep.memory.task = 'idle';
-                                creep.memory.targetId = null;
-                                logger.info(creep.name + ': Keine weiteren Sammelquellen benötigt, setze auf idle');
+                                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
+                                if (creep.store[RESOURCE_ENERGY] > 0) {
+                                    creep.memory.working = true;
+                                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
+                                    if (deliverTasks.length > 0) {
+                                        taskManager.assignTask(creep, deliverTasks);
+                                    } else {
+                                        creep.memory.task = 'idle';
+                                        creep.memory.targetId = null;
+                                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
+                                    }
+                                } else {
+                                    creep.memory.task = 'idle';
+                                    creep.memory.targetId = null;
+                                    logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
+                                }
                             }
                         }
                     } else {
@@ -206,9 +270,22 @@ module.exports.run = function(creep) {
                     }
                 }
             } else {
-                creep.memory.task = 'idle';
-                creep.memory.targetId = null;
-                logger.info(creep.name + ': Keine Sammelquellen verfügbar, setze auf idle');
+                // Wenn keine Collect-Aufgaben mehr verfügbar sind, aber Energie vorhanden, sofort liefern
+                if (creep.store[RESOURCE_ENERGY] > 0) {
+                    creep.memory.working = true;
+                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
+                    if (deliverTasks.length > 0) {
+                        taskManager.assignTask(creep, deliverTasks);
+                    } else {
+                        creep.memory.task = 'idle';
+                        creep.memory.targetId = null;
+                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
+                    }
+                } else {
+                    creep.memory.task = 'idle';
+                    creep.memory.targetId = null;
+                    logger.info(creep.name + ': Keine Sammelquellen verfügbar, setze auf idle');
+                }
             }
         }
     }
