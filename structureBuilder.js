@@ -47,14 +47,12 @@ module.exports = {
 
             for (let dx = -maxDistance; dx <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dx++) {
                 for (let dy = -maxDistance; dy <= maxDistance && placed < (maxExtensions - extensions - extensionSites); dy++) {
-                    // Überspringe Positionen innerhalb von 2 Feldern, um Platz für Straßen und Creeps zu lassen
                     if (Math.abs(dx) <= 2 && Math.abs(dy) <= 2) continue;
 
                     let x = spawn.pos.x + dx;
                     let y = spawn.pos.y + dy;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
-                    // Nur Positionen innerhalb des gewünschten Radius (3-5 Felder)
                     if (distance > 2 && distance <= maxDistance && x >= 0 && x < 50 && y >= 0 && y < 50) {
                         if (this.canPlaceStructure(room, x, y)) {
                             room.createConstructionSite(x, y, STRUCTURE_EXTENSION);
@@ -171,20 +169,39 @@ module.exports = {
     buildTowers: function(room, spawn) {
         let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
         let towerSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
-        if (towers + towerSites < 1 && room.energyAvailable >= 600) {
-            let positions = [
-                { x: spawn.pos.x - 3, y: spawn.pos.y - 3 },
-                { x: spawn.pos.x + 3, y: spawn.pos.y - 3 },
-                { x: spawn.pos.x - 3, y: spawn.pos.y + 3 },
-                { x: spawn.pos.x + 3, y: spawn.pos.y + 3 }
-            ];
-            for (let pos of positions) {
-                if (this.canPlaceStructure(room, pos.x, pos.y)) {
-                    room.createConstructionSite(pos.x, pos.y, STRUCTURE_TOWER);
-                    logger.info('Placed tower at ' + pos.x + ',' + pos.y + ' in ' + room.name);
-                    break;
+        let maxTowers = room.controller.level >= 5 ? 2 : 1; // 2 Türme ab Level 5, sonst 1
+
+        logger.info('Towers in ' + room.name + ': ' + towers + ' built, ' + towerSites + ' sites, max ' + maxTowers + ', energy available: ' + room.energyAvailable);
+        if (towers + towerSites < maxTowers && room.energyAvailable >= 600) {
+            const maxDistance = 5; // Maximaler Radius von 5 Feldern vom Spawn
+            let placed = false;
+
+            for (let dx = -maxDistance; dx <= maxDistance && !placed; dx++) {
+                for (let dy = -maxDistance; dy <= maxDistance && !placed; dy++) {
+                    // Überspringe Positionen zu nah am Spawn (weniger als 2 Felder)
+                    if (Math.abs(dx) < 2 && Math.abs(dy) < 2) continue;
+
+                    let x = spawn.pos.x + dx;
+                    let y = spawn.pos.y + dy;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance >= 2 && distance <= maxDistance && x >= 0 && x < 50 && y >= 0 && y < 50) {
+                        if (this.canPlaceStructure(room, x, y)) {
+                            room.createConstructionSite(x, y, STRUCTURE_TOWER);
+                            logger.info('Placed tower at ' + x + ',' + y + ' in ' + room.name);
+                            placed = true; // Nur einen Turm pro Tick platzieren
+                        } else {
+                            logger.warn('Position ' + x + ',' + y + ' blocked for tower in ' + room.name);
+                        }
+                    }
                 }
             }
+
+            if (!placed) {
+                logger.warn('No valid position found for new tower in ' + room.name);
+            }
+        } else {
+            logger.info('No new towers needed in ' + room.name + ' or insufficient energy/conditions not met');
         }
     },
 
