@@ -8,7 +8,6 @@ module.exports.run = function(creep) {
         if (creep.memory.working) {
             creep.memory.working = false;
             logger.info(creep.name + ': Wechselt zu Sammeln (keine Energie)');
-            // Wenn vorher geliefert wurde, Aufgabe zurücksetzen
             if (creep.memory.task === 'deliver') {
                 delete creep.memory.task;
                 delete creep.memory.targetId;
@@ -18,7 +17,6 @@ module.exports.run = function(creep) {
         if (!creep.memory.working) {
             creep.memory.working = true;
             logger.info(creep.name + ': Wechselt zu Liefern (voll mit Energie)');
-            // Wenn vorher gesammelt wurde, Aufgabe zurücksetzen
             if (creep.memory.task === 'collect') {
                 delete creep.memory.task;
                 delete creep.memory.targetId;
@@ -45,6 +43,13 @@ module.exports.run = function(creep) {
     // Wenn die Aufgabe ungültig ist oder nicht zum Status passt, neue Aufgabe berechnen
     if (!taskValid || (creep.memory.working && creep.memory.task !== 'deliver') || (!creep.memory.working && creep.memory.task !== 'collect')) {
         let tasks = taskManager.getHaulerTasks(creep.room);
+        if (!Array.isArray(tasks)) {
+            logger.error(creep.name + ': getHaulerTasks returned invalid data: ' + JSON.stringify(tasks));
+            creep.memory.task = 'idle';
+            creep.memory.targetId = null;
+            return;
+        }
+
         if (creep.memory.working) {
             let deliverTasks = tasks.filter(t => t.type === 'deliver');
             if (deliverTasks.length > 0) {
@@ -73,12 +78,16 @@ module.exports.run = function(creep) {
             if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                 logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Liefern');
-            } else {
+            } else if (creep.transfer(target, RESOURCE_ENERGY) === OK) {
                 logger.info(creep.name + ': Liefert Energie an ' + target.structureType + ' ' + target.id);
                 if (target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
                     delete creep.memory.task;
                     delete creep.memory.targetId;
                 }
+            } else {
+                logger.warn(creep.name + ': Transfer fehlgeschlagen für ' + target.structureType + ' ' + target.id);
+                delete creep.memory.task;
+                delete creep.memory.targetId;
             }
         } else {
             logger.info(creep.name + ': Deliver-Ziel ungültig, Aufgabe zurückgesetzt');
@@ -92,23 +101,31 @@ module.exports.run = function(creep) {
                 if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
                     logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
-                } else {
+                } else if (creep.pickup(target) === OK) {
                     logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
                     if (target.amount === 0) {
                         delete creep.memory.task;
                         delete creep.memory.targetId;
                     }
+                } else {
+                    logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id);
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
                 }
             } else if (target.store) {
                 if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
                     logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
-                } else {
+                } else if (creep.withdraw(target, RESOURCE_ENERGY) === OK) {
                     logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
                     if (target.store[RESOURCE_ENERGY] === 0) {
                         delete creep.memory.task;
                         delete creep.memory.targetId;
                     }
+                } else {
+                    logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id);
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
                 }
             }
         } else {

@@ -5,7 +5,7 @@ var taskManager = {
     getWorkerTasks: function(room) {
         let tasks = [];
         let damagedWalls = room.find(FIND_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_WALL || s.structureType === STRUCTURE_RAMPART) && s.hits < s.hitsMax * 0.0003
+            filter: (structure) => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003
         });
         damagedWalls.forEach(wall => {
             tasks.push({
@@ -16,7 +16,7 @@ var taskManager = {
         });
 
         let damagedRoads = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_ROAD && s.hits < s.hitsMax
+            filter: (structure) => structure.structureType === STRUCTURE_ROAD && structure.hits < structure.hitsMax
         });
         damagedRoads.forEach(road => {
             tasks.push({
@@ -55,8 +55,9 @@ var taskManager = {
     getHaulerTasks: function(room) {
         let tasks = [];
 
+        // Energie liefern an Controller-Container
         let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         })[0];
         if (controllerContainer) {
             tasks.push({
@@ -66,8 +67,9 @@ var taskManager = {
             });
         }
 
+        // Energie liefern an Spawns, Extensions und Türme
         let energyTargets = room.find(FIND_STRUCTURES, {
-            filter: s => (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION || s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            filter: (structure) => (structure.structureType === STRUCTURE_SPAWN || structure.structureType === STRUCTURE_EXTENSION || structure.structureType === STRUCTURE_TOWER) && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
         energyTargets.forEach(target => {
             let priority = 0;
@@ -85,8 +87,9 @@ var taskManager = {
             });
         });
 
+        // Energie liefern an Storage
         let storageDeliver = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_STORAGE && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            filter: (structure) => structure.structureType === STRUCTURE_STORAGE && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
         });
         storageDeliver.forEach(store => {
             tasks.push({
@@ -96,10 +99,11 @@ var taskManager = {
             });
         });
 
+        // Energie sammeln aus Containern (Controller-Container ausgeschlossen)
         let containers = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && 
-                         s.store[RESOURCE_ENERGY] > 0 && 
-                         (!room.controller || s.pos.getRangeTo(room.controller) > 3)
+            filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && 
+                                   structure.store[RESOURCE_ENERGY] > 0 && 
+                                   (!room.controller || structure.pos.getRangeTo(room.controller) > 3)
         });
         containers.forEach(container => {
             let energyPercentage = container.store[RESOURCE_ENERGY] / container.store.getCapacity(RESOURCE_ENERGY);
@@ -110,8 +114,9 @@ var taskManager = {
             });
         });
 
+        // Energie sammeln aus abgeworfenen Ressourcen
         let droppedEnergy = room.find(FIND_DROPPED_RESOURCES, {
-            filter: r => r.resourceType === RESOURCE_ENERGY
+            filter: (resource) => resource.resourceType === RESOURCE_ENERGY
         });
         droppedEnergy.forEach(resource => {
             tasks.push({
@@ -121,8 +126,9 @@ var taskManager = {
             });
         });
 
+        // Energie sammeln aus Tombstones
         let tombstones = room.find(FIND_TOMBSTONES, {
-            filter: t => t.store[RESOURCE_ENERGY] > 0
+            filter: (tombstone) => tombstone.store[RESOURCE_ENERGY] > 0
         });
         tombstones.forEach(tombstone => {
             tasks.push({
@@ -132,8 +138,9 @@ var taskManager = {
             });
         });
 
+        // Energie sammeln aus Storage
         let storageForCollect = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
+            filter: (structure) => structure.structureType === STRUCTURE_STORAGE && structure.store[RESOURCE_ENERGY] > 0
         });
         storageForCollect.forEach(store => {
             tasks.push({
@@ -152,15 +159,14 @@ var taskManager = {
         let tasks = [];
         let assignedSources = _.map(_.filter(Game.creeps, c => c.memory.role === 'harvester' && c.memory.task === 'harvest'), 'memory.targetId');
 
-        // Aufgabe: Energie ernten von Quellen mit Containern
         let sources = room.find(FIND_SOURCES);
         sources.forEach(source => {
             let container = source.pos.findInRange(FIND_STRUCTURES, 1, {
-                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             })[0];
             if (container) {
                 let harvestersAssigned = assignedSources.filter(id => id === source.id).length;
-                let priority = harvestersAssigned === 0 ? 10 : 5; // Höchste Priorität für unbesetzte Quellen
+                let priority = harvestersAssigned === 0 ? 10 : 5;
                 tasks.push({
                     type: 'harvest',
                     target: source.id,
@@ -170,10 +176,9 @@ var taskManager = {
             }
         });
 
-        // Aufgabe: Container bauen bei Quellen ohne Container
         sources.forEach(source => {
-            let container = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
-            let site = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            let container = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: (structure) => structure.structureType === STRUCTURE_CONTAINER })[0];
+            let site = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: (site) => site.structureType === STRUCTURE_CONTAINER })[0];
             if (!container && !site) {
                 tasks.push({
                     type: 'constructContainer',
@@ -183,9 +188,8 @@ var taskManager = {
             }
         });
 
-        // Aufgabe: Container reparieren
         let containers = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && s.hits < s.hitsMax
+            filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.hits < structure.hitsMax
         });
         containers.forEach(container => {
             tasks.push({
@@ -197,6 +201,58 @@ var taskManager = {
 
         tasks.sort((a, b) => b.priority - a.priority);
         logger.info('Harvester tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
+        return tasks;
+    },
+
+    getTowerTasks: function(room) {
+        let tasks = [];
+
+        // Angriff auf Feinde
+        let hostiles = room.find(FIND_HOSTILE_CREEPS);
+        hostiles.forEach(hostile => {
+            tasks.push({
+                type: 'attack',
+                target: hostile.id,
+                priority: 20 - hostile.pos.getRangeTo(room.controller)
+            });
+        });
+
+        // Heilung verletzter Creeps
+        let damagedCreeps = room.find(FIND_MY_CREEPS, { filter: (creep) => creep.hits < creep.hitsMax });
+        damagedCreeps.forEach(creep => {
+            tasks.push({
+                type: 'heal',
+                target: creep.id,
+                priority: 15 - (creep.hits / creep.hitsMax) * 10
+            });
+        });
+
+        // Reparatur von Straßen und Containern
+        let damagedNonWalls = room.find(FIND_STRUCTURES, {
+            filter: (structure) => (structure.structureType === STRUCTURE_ROAD || structure.structureType === STRUCTURE_CONTAINER) && structure.hits < structure.hitsMax
+        });
+        damagedNonWalls.forEach(structure => {
+            tasks.push({
+                type: 'repair',
+                target: structure.id,
+                priority: 10 - (structure.hits / structure.hitsMax) * 5
+            });
+        });
+
+        // Reparatur von Wänden
+        let damagedWalls = room.find(FIND_STRUCTURES, {
+            filter: (structure) => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003
+        });
+        damagedWalls.forEach(wall => {
+            tasks.push({
+                type: 'repair',
+                target: wall.id,
+                priority: 5
+            });
+        });
+
+        tasks.sort((a, b) => b.priority - a.priority);
+        logger.info('Tower tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
         return tasks;
     },
 
