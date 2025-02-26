@@ -60,7 +60,6 @@ module.exports.run = function(creep) {
                 });
                 
                 if (extensionSpawnTasks.length > 0) {
-                    // Sortiere nach Entfernung zum Hauler
                     extensionSpawnTasks.sort((a, b) => {
                         let targetA = Game.getObjectById(a.target);
                         let targetB = Game.getObjectById(b.target);
@@ -68,9 +67,8 @@ module.exports.run = function(creep) {
                         let distB = creep.pos.getRangeTo(targetB);
                         return distA - distB;
                     });
-                    taskManager.assignTask(creep, [extensionSpawnTasks[0]]); // Nimm das nächstgelegene Ziel
+                    taskManager.assignTask(creep, [extensionSpawnTasks[0]]);
                 } else {
-                    // Für andere Ziele (z. B. Türme, Storage) normale Priorität beibehalten
                     taskManager.assignTask(creep, deliverTasks);
                 }
             } else {
@@ -81,7 +79,132 @@ module.exports.run = function(creep) {
         } else {
             let collectTasks = tasks.filter(t => t.type === 'collect');
             if (collectTasks.length > 0) {
-                taskManager.assignTask(creep, collectTasks);
+                let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
+                let haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
+
+                // Spezielle Behandlung für Dropped Resources und Tombsones
+                let lootTasks = collectTasks.filter(t => {
+                    let target = Game.getObjectById(t.target);
+                    return target && (target instanceof Resource || target instanceof Tombstone);
+                });
+
+                if (lootTasks.length > 0) {
+                    let selectedTask = null;
+                    for (let task of lootTasks) {
+                        let target = Game.getObjectById(task.target);
+                        if (!target) continue;
+
+                        let energyAmount = (target instanceof Resource) ? target.amount : target.store[RESOURCE_ENERGY];
+                        let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
+                        let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
+
+                        if (haulersAssigned < haulersNeeded) {
+                            selectedTask = task;
+                            break;
+                        }
+                    }
+
+                    if (selectedTask) {
+                        taskManager.assignTask(creep, [selectedTask]);
+                    } else {
+                        // Wenn kein Loot-Ziel mehr benötigt wird, prüfe Quellen-Container
+                        let sourceContainerTasks = collectTasks.filter(t => {
+                            let target = Game.getObjectById(t.target);
+                            return target && target.structureType === STRUCTURE_CONTAINER && 
+                                   target.pos.findInRange(FIND_SOURCES, 1).length > 0;
+                        });
+
+                        if (sourceContainerTasks.length > 0) {
+                            let selectedContainerTask = null;
+                            for (let task of sourceContainerTasks) {
+                                let target = Game.getObjectById(task.target);
+                                if (!target) continue;
+
+                                let energyAmount = target.store[RESOURCE_ENERGY];
+                                let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
+                                let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
+
+                                if (haulersAssigned < haulersNeeded) {
+                                    selectedContainerTask = task;
+                                    break;
+                                }
+                            }
+
+                            if (selectedContainerTask) {
+                                taskManager.assignTask(creep, [selectedContainerTask]);
+                            } else {
+                                // Wenn kein Quellen-Container mehr benötigt wird, andere Collect-Aufgaben nutzen
+                                let otherCollectTasks = collectTasks.filter(t => {
+                                    let target = Game.getObjectById(t.target);
+                                    return target && !(target instanceof Resource || target instanceof Tombstone) && 
+                                           target.pos.findInRange(FIND_SOURCES, 1).length === 0;
+                                });
+                                if (otherCollectTasks.length > 0) {
+                                    taskManager.assignTask(creep, otherCollectTasks);
+                                } else {
+                                    creep.memory.task = 'idle';
+                                    creep.memory.targetId = null;
+                                    logger.info(creep.name + ': Keine weiteren Sammelquellen benötigt, setze auf idle');
+                                }
+                            }
+                        } else {
+                            // Andere Collect-Aufgaben (z. B. Storage)
+                            let otherCollectTasks = collectTasks.filter(t => {
+                                let target = Game.getObjectById(t.target);
+                                return target && !(target instanceof Resource || target instanceof Tombstone);
+                            });
+                            if (otherCollectTasks.length > 0) {
+                                taskManager.assignTask(creep, otherCollectTasks);
+                            } else {
+                                creep.memory.task = 'idle';
+                                creep.memory.targetId = null;
+                                logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
+                            }
+                        }
+                    }
+                } else {
+                    // Keine Loot-Ziele, prüfe Quellen-Container direkt
+                    let sourceContainerTasks = collectTasks.filter(t => {
+                        let target = Game.getObjectById(t.target);
+                        return target && target.structureType === STRUCTURE_CONTAINER && 
+                               target.pos.findInRange(FIND_SOURCES, 1).length > 0;
+                    });
+
+                    if (sourceContainerTasks.length > 0) {
+                        let selectedContainerTask = null;
+                        for (let task of sourceContainerTasks) {
+                            let target = Game.getObjectById(task.target);
+                            if (!target) continue;
+
+                            let energyAmount = target.store[RESOURCE_ENERGY];
+                            let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
+                            let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
+
+                            if (haulersAssigned < haulersNeeded) {
+                                selectedContainerTask = task;
+                                break;
+                            }
+                        }
+
+                        if (selectedContainerTask) {
+                            taskManager.assignTask(creep, [selectedContainerTask]);
+                        } else {
+                            let otherCollectTasks = collectTasks.filter(t => {
+                                let target = Game.getObjectById(t.target);
+                                return target && target.pos.findInRange(FIND_SOURCES, 1).length === 0;
+                            });
+                            if (otherCollectTasks.length > 0) {
+                                taskManager.assignTask(creep, otherCollectTasks);
+                            } else {
+                                creep.memory.task = 'idle';
+                                creep.memory.targetId = null;
+                                logger.info(creep.name + ': Keine weiteren Sammelquellen benötigt, setze auf idle');
+                            }
+                        }
+                    } else {
+                        taskManager.assignTask(creep, collectTasks);
+                    }
+                }
             } else {
                 creep.memory.task = 'idle';
                 creep.memory.targetId = null;
