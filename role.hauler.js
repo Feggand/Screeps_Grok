@@ -1,20 +1,21 @@
 // role.hauler.js
 // Logik für Hauler-Creeps, die Energie transportieren
 
-var taskManager = require('taskManager'); // Importiert Task-Manager-Modul
-var logger = require('logger'); // Importiert Logging-Modul
+var taskManager = require('taskManager');
+var logger = require('logger');
 
 module.exports.run = function(creep) {
     // Arbeitsstatus aktualisieren basierend auf Energie im Creep
     const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für niedrigere Prioritäten
-    const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY); // Kapazität des Creeps
+    const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
+    const minContainerEnergy = haulerCapacity * 0.5; // Mindestens 50% der Kapazität als Schwellwert
 
     if (creep.store[RESOURCE_ENERGY] === 0) { // Keine Energie
         if (creep.memory.working) {
-            creep.memory.working = false; // Wechselt zu Sammelmodus
+            creep.memory.working = false;
             logger.info(creep.name + ': Wechselt zu Sammeln (keine Energie)');
             if (creep.memory.task === 'deliver') {
-                delete creep.memory.task; // Löscht Lieferaufgabe
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         }
@@ -22,20 +23,20 @@ module.exports.run = function(creep) {
                (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
         // Voll oder über Schwellwert im Liefermodus
         if (!creep.memory.working) {
-            creep.memory.working = true; // Wechselt zu Liefermodus
+            creep.memory.working = true;
             logger.info(creep.name + ': Wechselt zu Liefern (voll oder über Schwellwert)');
             if (creep.memory.task === 'collect') {
-                delete creep.memory.task; // Löscht Sammelaufgabe
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         }
     } else if (creep.store[RESOURCE_ENERGY] > 0) {
         // Sofort liefern, wenn Energie vorhanden (für hohe Prioritäten)
         if (!creep.memory.working) {
-            creep.memory.working = true; // Wechselt zu Liefermodus
+            creep.memory.working = true;
             logger.info(creep.name + ': Wechselt zu Liefern (Energie vorhanden)');
             if (creep.memory.task === 'collect') {
-                delete creep.memory.task; // Löscht Sammelaufgabe
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         }
@@ -43,14 +44,12 @@ module.exports.run = function(creep) {
 
     // Prüft, ob die gespeicherte Aufgabe noch gültig ist
     let taskValid = false;
-    let target = Game.getObjectById(creep.memory.targetId); // Holt Ziel der Aufgabe
+    let target = Game.getObjectById(creep.memory.targetId);
     if (creep.memory.task && target) {
         if (creep.memory.task === 'collect' && !creep.memory.working) {
-            // Sammelaufgabe gültig, wenn Ziel Energie hat
             taskValid = (target instanceof Resource && target.amount > 0) ||
                         (target.store && target.store[RESOURCE_ENERGY] > 0);
         } else if (creep.memory.task === 'deliver' && creep.memory.working) {
-            // Lieferaufgabe gültig, wenn Ziel Platz hat
             taskValid = target.store && target.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
         }
     } else if (!creep.memory.task) {
@@ -61,27 +60,64 @@ module.exports.run = function(creep) {
 
     // Wenn die Aufgabe ungültig ist oder nicht zum Status passt, neue zuweisen
     if (!taskValid || (creep.memory.working && creep.memory.task !== 'deliver') || (!creep.memory.working && creep.memory.task !== 'collect')) {
-        let tasks = taskManager.getHaulerTasks(creep.room); // Holt verfügbare Hauler-Aufgaben
+        let tasks = taskManager.getHaulerTasks(creep.room);
         if (!Array.isArray(tasks)) {
             logger.error(creep.name + ': getHaulerTasks returned invalid data: ' + JSON.stringify(tasks));
-            creep.memory.task = 'idle'; // Fallback auf idle
+            creep.memory.task = 'idle';
             creep.memory.targetId = null;
             return;
         }
 
         if (creep.memory.working) { // Liefermodus
-            let deliverTasks = tasks.filter(t => t.type === 'deliver'); // Filtert Lieferaufgaben
+            let deliverTasks = tasks.filter(t => t.type === 'deliver');
+
+            // Priorisiere nach Nähe: Spawn, dann Extensions, dann andere
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
+                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            });
+            if (spawn) {
+                let spawnTask = deliverTasks.find(t => t.target === spawn.id);
+                if (spawnTask) {
+                    taskManager.assignTask(creep, [spawnTask]);
+                    return;
+                }
+            }
+
+            let extensions = creep.room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            });
+            if (extensions.length > 0) {
+                let closestExtension = creep.pos.findClosestByPath(extensions);
+                let extensionTask = deliverTasks.find(t => t.target === closestExtension.id);
+                if (extensionTask) {
+                    taskManager.assignTask(creep, [extensionTask]);
+                    return;
+                }
+            }
+
+            // Fallback auf andere Lieferziele
             if (deliverTasks.length > 0) {
-                taskManager.assignTask(creep, deliverTasks); // Weist höchstpriorisierte Lieferaufgabe zu
+                let sortedTasks = deliverTasks.map(task => {
+                    let target = Game.getObjectById(task.target);
+                    return { task: task, distance: target ? creep.pos.getRangeTo(target) : Infinity };
+                }).sort((a, b) => a.distance - b.distance);
+                
+                if (sortedTasks.length > 0 && sortedTasks[0].distance !== Infinity) {
+                    taskManager.assignTask(creep, [sortedTasks[0].task]);
+                } else {
+                    creep.memory.task = 'idle';
+                    creep.memory.targetId = null;
+                    logger.info(creep.name + ': Keine erreichbaren Lieferziele, setze auf idle');
+                }
             } else {
-                creep.memory.task = 'idle'; // Keine Lieferziele -> idle
+                creep.memory.task = 'idle';
                 creep.memory.targetId = null;
                 logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
             }
         } else { // Sammelmodus
-            let collectTasks = tasks.filter(t => t.type === 'collect'); // Filtert Sammelaufgaben
+            let collectTasks = tasks.filter(t => t.type === 'collect');
             if (collectTasks.length > 0) {
-                let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId); // Bereits zugewiesene Hauler
+                let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
 
                 // Priorität 1: Abgeworfene Ressourcen und Tombstones
                 let lootTasks = collectTasks.filter(t => {
@@ -95,29 +131,28 @@ module.exports.run = function(creep) {
                         let target = Game.getObjectById(task.target);
                         if (!target) continue;
 
-                        let energyAmount = (target instanceof Resource) ? target.amount : target.store[RESOURCE_ENERGY]; // Energie im Ziel
-                        let haulersNeeded = Math.ceil(energyAmount / haulerCapacity); // Benötigte Hauler
-                        let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length; // Zugewiesene Hauler
+                        let energyAmount = (target instanceof Resource) ? target.amount : target.store[RESOURCE_ENERGY];
+                        let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
+                        let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
 
-                        if (haulersAssigned < haulersNeeded) { // Wenn noch Hauler benötigt
+                        if (haulersAssigned < haulersNeeded) {
                             selectedTask = task;
                             break;
                         }
                     }
 
                     if (selectedTask) {
-                        taskManager.assignTask(creep, [selectedTask]); // Weist spezifische Aufgabe zu
+                        taskManager.assignTask(creep, [selectedTask]);
                     } else {
-                        // Priorität 2: Container nahe Quellen
-                        let sourceContainerTasks = collectTasks.filter(t => {
+                        // Prüfe Container-Energie
+                        let viableContainerTasks = collectTasks.filter(t => {
                             let target = Game.getObjectById(t.target);
-                            return target && target.structureType === STRUCTURE_CONTAINER && 
-                                   target.pos.findInRange(FIND_SOURCES, 1).length > 0;
+                            return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
                         });
 
-                        if (sourceContainerTasks.length > 0) {
+                        if (viableContainerTasks.length > 0) {
                             let selectedContainerTask = null;
-                            for (let task of sourceContainerTasks) {
+                            for (let task of viableContainerTasks) {
                                 let target = Game.getObjectById(task.target);
                                 if (!target) continue;
 
@@ -132,71 +167,46 @@ module.exports.run = function(creep) {
                             }
 
                             if (selectedContainerTask) {
-                                taskManager.assignTask(creep, [selectedContainerTask]); // Weist Container-Aufgabe zu
+                                taskManager.assignTask(creep, [selectedContainerTask]);
                             } else {
-                                // Priorität 3: Andere Container
-                                let otherCollectTasks = collectTasks.filter(t => {
+                                // Fallback auf Storage, wenn keine Container genug Energie haben
+                                let storageTask = collectTasks.find(t => {
                                     let target = Game.getObjectById(t.target);
-                                    return target && !(target instanceof Resource || target instanceof Tombstone) && 
-                                           target.pos.findInRange(FIND_SOURCES, 1).length === 0;
+                                    return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
                                 });
-                                if (otherCollectTasks.length > 0) {
-                                    taskManager.assignTask(creep, otherCollectTasks); // Weist andere Sammelaufgabe zu
+                                if (storageTask) {
+                                    taskManager.assignTask(creep, [storageTask]);
                                 } else {
-                                    if (creep.store[RESOURCE_ENERGY] > 0) {
-                                        creep.memory.working = true; // Wechselt zu Liefermodus
-                                        let deliverTasks = tasks.filter(t => t.type === 'deliver');
-                                        if (deliverTasks.length > 0) {
-                                            taskManager.assignTask(creep, deliverTasks); // Weist Lieferaufgabe zu
-                                        } else {
-                                            creep.memory.task = 'idle'; // Keine Lieferziele -> idle
-                                            creep.memory.targetId = null;
-                                            logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
-                                        }
-                                    } else {
-                                        creep.memory.task = 'idle'; // Keine Sammelquellen -> idle
-                                        creep.memory.targetId = null;
-                                        logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
-                                    }
+                                    creep.memory.task = 'idle';
+                                    creep.memory.targetId = null;
+                                    logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
                                 }
                             }
                         } else {
-                            let otherCollectTasks = collectTasks.filter(t => {
+                            // Keine Container mit genug Energie, nutze Storage
+                            let storageTask = collectTasks.find(t => {
                                 let target = Game.getObjectById(t.target);
-                                return target && !(target instanceof Resource || target instanceof Tombstone);
+                                return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
                             });
-                            if (otherCollectTasks.length > 0) {
-                                taskManager.assignTask(creep, otherCollectTasks); // Weist andere Sammelaufgabe zu
+                            if (storageTask) {
+                                taskManager.assignTask(creep, [storageTask]);
                             } else {
-                                if (creep.store[RESOURCE_ENERGY] > 0) {
-                                    creep.memory.working = true; // Wechselt zu Liefermodus
-                                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
-                                    if (deliverTasks.length > 0) {
-                                        taskManager.assignTask(creep, deliverTasks); // Weist Lieferaufgabe zu
-                                    } else {
-                                        creep.memory.task = 'idle'; // Keine Lieferziele -> idle
-                                        creep.memory.targetId = null;
-                                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
-                                    }
-                                } else {
-                                    creep.memory.task = 'idle'; // Keine Sammelquellen -> idle
-                                    creep.memory.targetId = null;
-                                    logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
-                                }
+                                creep.memory.task = 'idle';
+                                creep.memory.targetId = null;
+                                logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
                             }
                         }
                     }
                 } else {
-                    // Keine Loot-Aufgaben, direkt zu Container nahe Quellen
-                    let sourceContainerTasks = collectTasks.filter(t => {
+                    // Keine Loot-Aufgaben, prüfe Container-Energie
+                    let viableContainerTasks = collectTasks.filter(t => {
                         let target = Game.getObjectById(t.target);
-                        return target && target.structureType === STRUCTURE_CONTAINER && 
-                               target.pos.findInRange(FIND_SOURCES, 1).length > 0;
+                        return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
                     });
 
-                    if (sourceContainerTasks.length > 0) {
+                    if (viableContainerTasks.length > 0) {
                         let selectedContainerTask = null;
-                        for (let task of sourceContainerTasks) {
+                        for (let task of viableContainerTasks) {
                             let target = Game.getObjectById(task.target);
                             if (!target) continue;
 
@@ -211,72 +221,60 @@ module.exports.run = function(creep) {
                         }
 
                         if (selectedContainerTask) {
-                            taskManager.assignTask(creep, [selectedContainerTask]); // Weist Container-Aufgabe zu
+                            taskManager.assignTask(creep, [selectedContainerTask]);
                         } else {
-                            let otherCollectTasks = collectTasks.filter(t => {
+                            // Fallback auf Storage, wenn keine Container genug Energie haben
+                            let storageTask = collectTasks.find(t => {
                                 let target = Game.getObjectById(t.target);
-                                return target && target.pos.findInRange(FIND_SOURCES, 1).length === 0;
+                                return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
                             });
-                            if (otherCollectTasks.length > 0) {
-                                taskManager.assignTask(creep, otherCollectTasks); // Weist andere Sammelaufgabe zu
+                            if (storageTask) {
+                                taskManager.assignTask(creep, [storageTask]);
                             } else {
-                                if (creep.store[RESOURCE_ENERGY] > 0) {
-                                    creep.memory.working = true; // Wechselt zu Liefermodus
-                                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
-                                    if (deliverTasks.length > 0) {
-                                        taskManager.assignTask(creep, deliverTasks); // Weist Lieferaufgabe zu
-                                    } else {
-                                        creep.memory.task = 'idle'; // Keine Lieferziele -> idle
-                                        creep.memory.targetId = null;
-                                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
-                                    }
-                                } else {
-                                    creep.memory.task = 'idle'; // Keine Sammelquellen -> idle
-                                    creep.memory.targetId = null;
-                                    logger.info(creep.name + ': Keine weiteren Sammelquellen verfügbar, setze auf idle');
-                                }
+                                creep.memory.task = 'idle';
+                                creep.memory.targetId = null;
+                                logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
                             }
                         }
                     } else {
-                        taskManager.assignTask(creep, collectTasks); // Weist beliebige Sammelaufgabe zu
+                        // Keine Container mit genug Energie, nutze Storage
+                        let storageTask = collectTasks.find(t => {
+                            let target = Game.getObjectById(t.target);
+                            return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
+                        });
+                        if (storageTask) {
+                            taskManager.assignTask(creep, [storageTask]);
+                        } else {
+                            creep.memory.task = 'idle';
+                            creep.memory.targetId = null;
+                            logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
+                        }
                     }
                 }
             } else {
-                if (creep.store[RESOURCE_ENERGY] > 0) {
-                    creep.memory.working = true; // Wechselt zu Liefermodus
-                    let deliverTasks = tasks.filter(t => t.type === 'deliver');
-                    if (deliverTasks.length > 0) {
-                        taskManager.assignTask(creep, deliverTasks); // Weist Lieferaufgabe zu
-                    } else {
-                        creep.memory.task = 'idle'; // Keine Lieferziele -> idle
-                        creep.memory.targetId = null;
-                        logger.info(creep.name + ': Keine Lieferziele verfügbar, setze auf idle');
-                    }
-                } else {
-                    creep.memory.task = 'idle'; // Keine Sammelquellen -> idle
-                    creep.memory.targetId = null;
-                    logger.info(creep.name + ': Keine Sammelquellen verfügbar, setze auf idle');
-                }
+                creep.memory.task = 'idle';
+                creep.memory.targetId = null;
+                logger.info(creep.name + ': Keine Sammelquellen verfügbar, setze auf idle');
             }
         }
     }
 
     // Führt die gespeicherte Aufgabe aus
     if (creep.memory.task === 'deliver' && creep.memory.working) {
-        let target = Game.getObjectById(creep.memory.targetId); // Lieferziel
+        let target = Game.getObjectById(creep.memory.targetId);
         if (target && target.store) {
             if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Ziel
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                 logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Liefern');
             } else if (creep.transfer(target, RESOURCE_ENERGY) === OK) {
-                logger.info(creep.name + ': Liefert Energie an ' + target.structureType + ' ' + target.id); // Liefert Energie
+                logger.info(creep.name + ': Liefert Energie an ' + target.structureType + ' ' + target.id);
                 if (target.store.getFreeCapacity(RESOURCE_ENERGY) === 0) {
-                    delete creep.memory.task; // Ziel voll -> Aufgabe löschen
+                    delete creep.memory.task;
                     delete creep.memory.targetId;
                 }
             } else {
-                logger.warn(creep.name + ': Transfer fehlgeschlagen für ' + target.structureType + ' ' + target.id); // Fehler protokollieren
-                delete creep.memory.task; // Aufgabe zurücksetzen
+                logger.warn(creep.name + ': Transfer fehlgeschlagen für ' + target.structureType + ' ' + target.id);
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         } else {
@@ -285,35 +283,35 @@ module.exports.run = function(creep) {
             delete creep.memory.targetId;
         }
     } else if (creep.memory.task === 'collect' && !creep.memory.working) {
-        let target = Game.getObjectById(creep.memory.targetId); // Sammelziel
+        let target = Game.getObjectById(creep.memory.targetId);
         if (target) {
-            if (target instanceof Resource) { // Abgeworfene Ressource
+            if (target instanceof Resource) {
                 if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zur Ressource
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
                     logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
                 } else if (creep.pickup(target) === OK) {
-                    logger.info(creep.name + ': Sammelt dropped resource ' + target.id); // Sammelt Ressource
+                    logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
                     if (target.amount === 0) {
-                        delete creep.memory.task; // Ressource aufgebraucht -> Aufgabe löschen
+                        delete creep.memory.task;
                         delete creep.memory.targetId;
                     }
                 } else {
-                    logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id); // Fehler protokollieren
+                    logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id);
                     delete creep.memory.task;
                     delete creep.memory.targetId;
                 }
-            } else if (target.store) { // Struktur mit Speicher (z. B. Container)
+            } else if (target.store) {
                 if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zur Struktur
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
                     logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
                 } else if (creep.withdraw(target, RESOURCE_ENERGY) === OK) {
-                    logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id); // Entnimmt Energie
+                    logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
                     if (target.store[RESOURCE_ENERGY] === 0) {
-                        delete creep.memory.task; // Keine Energie mehr -> Aufgabe löschen
+                        delete creep.memory.task;
                         delete creep.memory.targetId;
                     }
                 } else {
-                    logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id); // Fehler protokollieren
+                    logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id);
                     delete creep.memory.task;
                     delete creep.memory.targetId;
                 }
@@ -324,9 +322,9 @@ module.exports.run = function(creep) {
             delete creep.memory.targetId;
         }
     } else if (creep.memory.task === 'idle') {
-        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS); // Nächstgelegener Spawn
+        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
         if (spawn) {
-            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zum Spawn
+            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
             logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn ' + spawn.id);
         }
     } else {
