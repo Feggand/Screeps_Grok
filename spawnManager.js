@@ -1,6 +1,4 @@
-// spawnManager.js
-// Modul zur Verwaltung der Spawns und Entscheidung, welche Creeps gespawnt werden
-
+// spawnManager.js (angepasst)
 var spawnCreeps = require('spawnCreeps');
 var logger = require('logger');
 
@@ -35,7 +33,8 @@ module.exports = {
             remoteRoomNeeds[remoteRoomName] = sourceCount;
         });
         roomMemory.minRemoteHarvesters = Math.min(totalRemoteSources, remoteRooms.length * 2);
-        roomMemory.minRemoteHaulers = remoteRooms.length * 2; // 2 RemoteHauler pro Remote-Raum
+        roomMemory.minRemoteHaulers = remoteRooms.length * 2;
+        roomMemory.minRemoteWorkers = remoteRooms.length; // 1 remoteWorker pro Nebenraum
 
         let creeps = _.filter(Game.creeps, c => c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name));
         let harvesters = _.countBy(creeps, 'memory.role').harvester || 0;
@@ -43,6 +42,7 @@ module.exports = {
         let workers = _.countBy(creeps, 'memory.role').worker || 0;
         let remoteHarvesters = _.filter(Game.creeps, c => c.memory.role === 'remoteHarvester' && c.memory.homeRoom === room.name).length;
         let remoteHaulers = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.homeRoom === room.name).length;
+        let remoteWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.homeRoom === room.name).length;
         let reservers = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.homeRoom === room.name).length;
 
         logger.info('Room ' + room.name + ': Harvesters=' + harvesters + '/' + roomMemory.minHarvesters + 
@@ -50,6 +50,7 @@ module.exports = {
                     ', Workers=' + workers + '/' + roomMemory.minWorkers + 
                     ', RemoteHarvesters=' + remoteHarvesters + '/' + roomMemory.minRemoteHarvesters + 
                     ', RemoteHaulers=' + remoteHaulers + '/' + roomMemory.minRemoteHaulers +
+                    ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
                     ', Reservers=' + reservers + '/' + remoteRooms.length +
                     ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy);
 
@@ -59,6 +60,27 @@ module.exports = {
                 logger.info('Spawn in ' + room.name + ' is busy spawning: ' + spawn.spawning.name);
             }
             return;
+        }
+
+        // Prüfe Aufgaben in Nebenräumen für remoteWorker
+        let remoteTasksExist = false;
+        let targetRoomForWorker = null;
+        for (let remoteRoomName of remoteRooms) {
+            const remoteRoom = Game.rooms[remoteRoomName];
+            const currentWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.targetRoom === remoteRoomName).length;
+            if (currentWorkers >= 1) continue; // Bereits ein Worker vorhanden
+
+            if (remoteRoom) {
+                const repairTasks = remoteRoom.find(FIND_STRUCTURES, {
+                    filter: s => s.hits < s.hitsMax * 0.8 && s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART
+                }).length;
+                const constructionTasks = remoteRoom.find(FIND_CONSTRUCTION_SITES).length;
+                if (repairTasks > 0 || constructionTasks > 0) {
+                    remoteTasksExist = true;
+                    targetRoomForWorker = remoteRoomName;
+                    break;
+                }
+            }
         }
 
         if (room.controller.level >= 4 && room.energyAvailable >= 650) {
@@ -131,6 +153,10 @@ module.exports = {
             } else {
                 logger.info('No suitable remote room needing hauler found');
             }
+        } else if (remoteWorkers < roomMemory.minRemoteWorkers && remoteTasksExist && room.energyAvailable >= 200) {
+            spawnCreeps.spawn(spawn, 'remoteWorker', targetRoomForWorker, room.name);
+            logger.info('Spawning new remoteWorker for ' + targetRoomForWorker + ' in ' + room.name);
+            return;
         } else {
             logger.info('No spawning needed in ' + room.name + ': All minimum requirements met or exceeded');
         }

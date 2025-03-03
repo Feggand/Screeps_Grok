@@ -1,6 +1,4 @@
-// spawnCreeps.js
-// Modul zum Spawnen neuer Creeps mit spezifischen Rollen und Körperkonfigurationen
-
+// spawnCreeps.js (angepasst)
 var logger = require('logger');
 
 module.exports = {
@@ -19,7 +17,7 @@ module.exports = {
             let carryParts = Math.max(4, Math.min(Math.floor(energyCapacity / 100), 8));
             let moveParts = Math.ceil(carryParts / 2);
             minEnergyRequired = (carryParts * 50) + (moveParts * 50);
-        } else if (role === 'worker') {
+        } else if (role === 'worker' || role === 'remoteWorker') {
             let workParts = Math.max(1, Math.min(Math.floor(energyCapacity / 200), 4));
             let carryParts = Math.max(1, Math.min(Math.floor((energyCapacity - workParts * 100) / 50), 2));
             let moveParts = Math.ceil((workParts + carryParts) / 2);
@@ -53,7 +51,7 @@ module.exports = {
             body = totalCost <= energyAvailable ? 
                 Array(carryParts).fill(CARRY).concat(Array(moveParts).fill(MOVE)) : 
                 [CARRY, CARRY, CARRY, CARRY, MOVE, MOVE];
-        } else if (role === 'worker') {
+        } else if (role === 'worker' || role === 'remoteWorker') {
             let workParts = Math.max(1, Math.min(Math.floor(energyAvailable / 200), 4));
             let carryParts = Math.max(1, Math.min(Math.floor((energyAvailable - workParts * 100) / 50), 2));
             let moveParts = Math.ceil((workParts + carryParts) / 2);
@@ -85,7 +83,7 @@ module.exports = {
             let unoccupiedSources = sources.filter(s => !(s.id in harvestersPerSource));
             let targetSource = unoccupiedSources.length > 0 ? unoccupiedSources[0] : _.min(sources, s => (harvestersPerSource[s.id] || []).length);
             memory.source = targetSource.id;
-        } else if (role === 'remoteHarvester' || role === 'remoteHauler') {
+        } else if (role === 'remoteHarvester' || role === 'remoteHauler' || role === 'remoteWorker') {
             let homeRoomMemory = Memory.rooms[homeRoom];
             let remoteRooms = homeRoomMemory && homeRoomMemory.remoteRooms ? homeRoomMemory.remoteRooms : [];
             memory.targetRoom = targetRoom || (remoteRooms.length > 0 ? remoteRooms[0] : null);
