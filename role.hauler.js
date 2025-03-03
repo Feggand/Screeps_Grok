@@ -47,6 +47,11 @@ module.exports.run = function(creep) {
         filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75
     }).length > 0;
 
+    // Prüft, ob ein Receiver-Link in der Nähe des Controllers existiert
+    const hasReceiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
+        filter: s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0
+    }).length > 0;
+
     // Prüft, ob die gespeicherte Aufgabe noch gültig ist
     let taskValid = false;
     let target = Game.getObjectById(creep.memory.targetId);
@@ -75,6 +80,14 @@ module.exports.run = function(creep) {
 
         if (creep.memory.working) { // Liefermodus
             let deliverTasks = tasks.filter(t => t.type === 'deliver');
+
+            // Ausschluss des Controller-Containers, wenn ein Receiver-Link existiert
+            if (hasReceiverLink) {
+                deliverTasks = deliverTasks.filter(t => {
+                    let target = Game.getObjectById(t.target);
+                    return target && target.structureType !== STRUCTURE_CONTAINER;
+                });
+            }
 
             // Priorität 1: Türme, wenn unter 75%
             let towerTask = deliverTasks.find(t => {
@@ -111,10 +124,10 @@ module.exports.run = function(creep) {
                 }
             }
 
-            // Priorität 4: Controller-Container oder Sender-Link
+            // Priorität 4: Sender-Link (nur wenn kein Receiver-Link den Controller bedient)
             let otherTasks = deliverTasks.filter(t => {
                 let target = Game.getObjectById(t.target);
-                return target && (target.structureType === STRUCTURE_CONTAINER || target.structureType === STRUCTURE_LINK);
+                return target && target.structureType === STRUCTURE_LINK;
             });
             if (otherTasks.length > 0) {
                 let sortedTasks = otherTasks.map(task => {

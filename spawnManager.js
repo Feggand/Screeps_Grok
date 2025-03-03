@@ -20,10 +20,10 @@ module.exports = {
         // Berechnung der Worker-Anzahl mit Berücksichtigung der Storage-Füllung
         let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
                           (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0);
-        let baseWorkers = 1 + extraWorkers + Math.floor(totalContainerEnergy / 1000);
+        let baseWorkers = 2 + extraWorkers + Math.floor(totalContainerEnergy / 500); // Basis von 1 auf 2 erhöht, Container-Energie stärker gewichtet
         let storageFillPercentage = storage && storage.store[RESOURCE_ENERGY] > 0 ? (storage.store[RESOURCE_ENERGY] / storage.store.getCapacity(RESOURCE_ENERGY)) : 0;
-        let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 20) : 0; // Erhöht Worker bei >65% Füllung
-        roomMemory.minWorkers = Math.min(10, Math.max(2, baseWorkers + additionalWorkers)); // Max 10, mindestens 2
+        let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 40) : 0; // Erhöht auf 40 für noch aggressivere Skalierung
+        roomMemory.minWorkers = Math.min(12, Math.max(2, baseWorkers + additionalWorkers));
 
         let totalRemoteSources = 0;
         const remoteRooms = roomMemory.remoteRooms || [];
@@ -92,6 +92,17 @@ module.exports = {
             }
         }
 
+        // Priorität für Worker, wenn Storage voll ist
+        if (workers < roomMemory.minWorkers && room.energyAvailable >= 200) {
+            let workerRoles = ['upgrader', 'repairer', 'wallRepairer', 'flexible'];
+            let existingWorkers = _.filter(Game.creeps, c => c.memory.role === 'worker' && c.memory.homeRoom === room.name);
+            let roleCounts = _.countBy(existingWorkers, 'memory.subRole');
+            let nextRole = workerRoles.find(role => !roleCounts[role] || roleCounts[role] < 1) || 'flexible';
+            spawnCreeps.spawn(spawn, 'worker', null, room.name, nextRole);
+            logger.info('Spawning new worker with subRole ' + nextRole + ' in ' + room.name);
+            return;
+        }
+
         if (room.controller.level >= 4 && room.energyAvailable >= 650) {
             for (let i = 0; i < remoteRooms.length; i++) {
                 let remoteRoomName = remoteRooms[i];
@@ -113,14 +124,6 @@ module.exports = {
         } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 300) {
             spawnCreeps.spawn(spawn, 'hauler', null, room.name);
             logger.info('Spawning new hauler in ' + room.name);
-            return;
-        } else if (workers < roomMemory.minWorkers && room.energyAvailable >= 200) {
-            let workerRoles = ['upgrader', 'repairer', 'wallRepairer', 'flexible'];
-            let existingWorkers = _.filter(Game.creeps, c => c.memory.role === 'worker' && c.memory.homeRoom === room.name);
-            let roleCounts = _.countBy(existingWorkers, 'memory.subRole');
-            let nextRole = workerRoles.find(role => !roleCounts[role] || roleCounts[role] < 1) || 'flexible';
-            spawnCreeps.spawn(spawn, 'worker', null, room.name, nextRole);
-            logger.info('Spawning new worker with subRole ' + nextRole + ' in ' + room.name);
             return;
         } else if (remoteHarvesters < roomMemory.minRemoteHarvesters && room.energyAvailable >= 300) {
             let targetRoom = null;
