@@ -42,6 +42,11 @@ module.exports.run = function(creep) {
         }
     }
 
+    // Prüft, ob Türme Energie benötigen
+    const towersNeedingEnergy = creep.room.find(FIND_STRUCTURES, {
+        filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75
+    }).length > 0;
+
     // Prüft, ob die gespeicherte Aufgabe noch gültig ist
     let taskValid = false;
     let target = Game.getObjectById(creep.memory.targetId);
@@ -71,7 +76,17 @@ module.exports.run = function(creep) {
         if (creep.memory.working) { // Liefermodus
             let deliverTasks = tasks.filter(t => t.type === 'deliver');
 
-            // Priorisiere nach Nähe: Spawn, dann Extensions, dann andere
+            // Priorität 1: Türme, wenn unter 75%
+            let towerTask = deliverTasks.find(t => {
+                let target = Game.getObjectById(t.target);
+                return target && target.structureType === STRUCTURE_TOWER && target.store[RESOURCE_ENERGY] < target.store.getCapacity(RESOURCE_ENERGY) * 0.75;
+            });
+            if (towerTask) {
+                taskManager.assignTask(creep, [towerTask]);
+                return;
+            }
+
+            // Priorität 2: Spawn
             let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
                 filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             });
@@ -83,6 +98,7 @@ module.exports.run = function(creep) {
                 }
             }
 
+            // Priorität 3: Extensions
             let extensions = creep.room.find(FIND_STRUCTURES, {
                 filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             });
@@ -95,20 +111,30 @@ module.exports.run = function(creep) {
                 }
             }
 
-            // Fallback auf andere Lieferziele
-            if (deliverTasks.length > 0) {
-                let sortedTasks = deliverTasks.map(task => {
+            // Priorität 4: Controller-Container oder Sender-Link
+            let otherTasks = deliverTasks.filter(t => {
+                let target = Game.getObjectById(t.target);
+                return target && (target.structureType === STRUCTURE_CONTAINER || target.structureType === STRUCTURE_LINK);
+            });
+            if (otherTasks.length > 0) {
+                let sortedTasks = otherTasks.map(task => {
                     let target = Game.getObjectById(task.target);
                     return { task: task, distance: target ? creep.pos.getRangeTo(target) : Infinity };
                 }).sort((a, b) => a.distance - b.distance);
                 
                 if (sortedTasks.length > 0 && sortedTasks[0].distance !== Infinity) {
                     taskManager.assignTask(creep, [sortedTasks[0].task]);
-                } else {
-                    creep.memory.task = 'idle';
-                    creep.memory.targetId = null;
-                    logger.info(creep.name + ': Keine erreichbaren Lieferziele, setze auf idle');
+                    return;
                 }
+            }
+
+            // Fallback: Storage nur, wenn keine anderen Ziele verfügbar
+            let storageTask = deliverTasks.find(t => {
+                let target = Game.getObjectById(t.target);
+                return target && target.structureType === STRUCTURE_STORAGE;
+            });
+            if (storageTask) {
+                taskManager.assignTask(creep, [storageTask]);
             } else {
                 creep.memory.task = 'idle';
                 creep.memory.targetId = null;
@@ -118,6 +144,14 @@ module.exports.run = function(creep) {
             let collectTasks = tasks.filter(t => t.type === 'collect');
             if (collectTasks.length > 0) {
                 let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
+
+                // Prüfe, ob Türme Energie benötigen und vermeide Storage-Sammeln
+                if (towersNeedingEnergy) {
+                    collectTasks = collectTasks.filter(t => {
+                        let target = Game.getObjectById(t.target);
+                        return target && target.structureType !== STRUCTURE_STORAGE;
+                    });
+                }
 
                 // Priorität 1: Abgeworfene Ressourcen und Tombstones
                 let lootTasks = collectTasks.filter(t => {
@@ -143,114 +177,53 @@ module.exports.run = function(creep) {
 
                     if (selectedTask) {
                         taskManager.assignTask(creep, [selectedTask]);
-                    } else {
-                        // Prüfe Container-Energie
-                        let viableContainerTasks = collectTasks.filter(t => {
-                            let target = Game.getObjectById(t.target);
-                            return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                        });
-
-                        if (viableContainerTasks.length > 0) {
-                            let selectedContainerTask = null;
-                            for (let task of viableContainerTasks) {
-                                let target = Game.getObjectById(task.target);
-                                if (!target) continue;
-
-                                let energyAmount = target.store[RESOURCE_ENERGY];
-                                let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
-                                let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
-
-                                if (haulersAssigned < haulersNeeded) {
-                                    selectedContainerTask = task;
-                                    break;
-                                }
-                            }
-
-                            if (selectedContainerTask) {
-                                taskManager.assignTask(creep, [selectedContainerTask]);
-                            } else {
-                                // Fallback auf Storage, wenn keine Container genug Energie haben
-                                let storageTask = collectTasks.find(t => {
-                                    let target = Game.getObjectById(t.target);
-                                    return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                                });
-                                if (storageTask) {
-                                    taskManager.assignTask(creep, [storageTask]);
-                                } else {
-                                    creep.memory.task = 'idle';
-                                    creep.memory.targetId = null;
-                                    logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
-                                }
-                            }
-                        } else {
-                            // Keine Container mit genug Energie, nutze Storage
-                            let storageTask = collectTasks.find(t => {
-                                let target = Game.getObjectById(t.target);
-                                return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                            });
-                            if (storageTask) {
-                                taskManager.assignTask(creep, [storageTask]);
-                            } else {
-                                creep.memory.task = 'idle';
-                                creep.memory.targetId = null;
-                                logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
-                            }
-                        }
-                    }
-                } else {
-                    // Keine Loot-Aufgaben, prüfe Container-Energie
-                    let viableContainerTasks = collectTasks.filter(t => {
-                        let target = Game.getObjectById(t.target);
-                        return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                    });
-
-                    if (viableContainerTasks.length > 0) {
-                        let selectedContainerTask = null;
-                        for (let task of viableContainerTasks) {
-                            let target = Game.getObjectById(task.target);
-                            if (!target) continue;
-
-                            let energyAmount = target.store[RESOURCE_ENERGY];
-                            let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
-                            let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
-
-                            if (haulersAssigned < haulersNeeded) {
-                                selectedContainerTask = task;
-                                break;
-                            }
-                        }
-
-                        if (selectedContainerTask) {
-                            taskManager.assignTask(creep, [selectedContainerTask]);
-                        } else {
-                            // Fallback auf Storage, wenn keine Container genug Energie haben
-                            let storageTask = collectTasks.find(t => {
-                                let target = Game.getObjectById(t.target);
-                                return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                            });
-                            if (storageTask) {
-                                taskManager.assignTask(creep, [storageTask]);
-                            } else {
-                                creep.memory.task = 'idle';
-                                creep.memory.targetId = null;
-                                logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
-                            }
-                        }
-                    } else {
-                        // Keine Container mit genug Energie, nutze Storage
-                        let storageTask = collectTasks.find(t => {
-                            let target = Game.getObjectById(t.target);
-                            return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
-                        });
-                        if (storageTask) {
-                            taskManager.assignTask(creep, [storageTask]);
-                        } else {
-                            creep.memory.task = 'idle';
-                            creep.memory.targetId = null;
-                            logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
-                        }
+                        return;
                     }
                 }
+
+                // Prüfe Container-Energie
+                let viableContainerTasks = collectTasks.filter(t => {
+                    let target = Game.getObjectById(t.target);
+                    return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
+                });
+
+                if (viableContainerTasks.length > 0) {
+                    let selectedContainerTask = null;
+                    for (let task of viableContainerTasks) {
+                        let target = Game.getObjectById(task.target);
+                        if (!target) continue;
+
+                        let energyAmount = target.store[RESOURCE_ENERGY];
+                        let haulersNeeded = Math.ceil(energyAmount / haulerCapacity);
+                        let haulersAssigned = assignedHaulers.filter(c => c.memory.targetId === task.target).length;
+
+                        if (haulersAssigned < haulersNeeded) {
+                            selectedContainerTask = task;
+                            break;
+                        }
+                    }
+
+                    if (selectedContainerTask) {
+                        taskManager.assignTask(creep, [selectedContainerTask]);
+                        return;
+                    }
+                }
+
+                // Fallback auf Storage nur, wenn keine Türme Energie benötigen
+                if (!towersNeedingEnergy) {
+                    let storageTask = collectTasks.find(t => {
+                        let target = Game.getObjectById(t.target);
+                        return target && target.structureType === STRUCTURE_STORAGE && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
+                    });
+                    if (storageTask) {
+                        taskManager.assignTask(creep, [storageTask]);
+                        return;
+                    }
+                }
+
+                creep.memory.task = 'idle';
+                creep.memory.targetId = null;
+                logger.info(creep.name + ': Keine Sammelquellen mit ausreichend Energie, setze auf idle');
             } else {
                 creep.memory.task = 'idle';
                 creep.memory.targetId = null;

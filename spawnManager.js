@@ -1,4 +1,6 @@
-// spawnManager.js (angepasst)
+// spawnManager.js
+// Modul zur Verwaltung der Spawns und Entscheidung, welche Creeps gespawnt werden
+
 var spawnCreeps = require('spawnCreeps');
 var logger = require('logger');
 
@@ -10,12 +12,18 @@ module.exports = {
         let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
         let totalContainerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
         let sources = room.find(FIND_SOURCES);
+        let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
 
         roomMemory.minHarvesters = sources.length;
         roomMemory.minHaulers = Math.min(3, Math.max(2, Math.ceil(totalContainerEnergy / 1000)));
+        
+        // Berechnung der Worker-Anzahl mit Berücksichtigung der Storage-Füllung
         let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
                           (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0);
-        roomMemory.minWorkers = Math.min(8, Math.max(2, 1 + extraWorkers + Math.floor(totalContainerEnergy / 1000)));
+        let baseWorkers = 1 + extraWorkers + Math.floor(totalContainerEnergy / 1000);
+        let storageFillPercentage = storage && storage.store[RESOURCE_ENERGY] > 0 ? (storage.store[RESOURCE_ENERGY] / storage.store.getCapacity(RESOURCE_ENERGY)) : 0;
+        let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 20) : 0; // Erhöht Worker bei >65% Füllung
+        roomMemory.minWorkers = Math.min(10, Math.max(2, baseWorkers + additionalWorkers)); // Max 10, mindestens 2
 
         let totalRemoteSources = 0;
         const remoteRooms = roomMemory.remoteRooms || [];
@@ -34,7 +42,7 @@ module.exports = {
         });
         roomMemory.minRemoteHarvesters = Math.min(totalRemoteSources, remoteRooms.length * 2);
         roomMemory.minRemoteHaulers = remoteRooms.length * 2;
-        roomMemory.minRemoteWorkers = remoteRooms.length; // 1 remoteWorker pro Nebenraum
+        roomMemory.minRemoteWorkers = remoteRooms.length;
 
         let creeps = _.filter(Game.creeps, c => c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name));
         let harvesters = _.countBy(creeps, 'memory.role').harvester || 0;
@@ -52,7 +60,8 @@ module.exports = {
                     ', RemoteHaulers=' + remoteHaulers + '/' + roomMemory.minRemoteHaulers +
                     ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
                     ', Reservers=' + reservers + '/' + remoteRooms.length +
-                    ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy);
+                    ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy +
+                    ', StorageFill=' + (storageFillPercentage * 100).toFixed(1) + '%');
 
         let spawn = room.find(FIND_MY_SPAWNS)[0];
         if (!spawn || spawn.spawning) {
@@ -68,7 +77,7 @@ module.exports = {
         for (let remoteRoomName of remoteRooms) {
             const remoteRoom = Game.rooms[remoteRoomName];
             const currentWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.targetRoom === remoteRoomName).length;
-            if (currentWorkers >= 1) continue; // Bereits ein Worker vorhanden
+            if (currentWorkers >= 1) continue;
 
             if (remoteRoom) {
                 const repairTasks = remoteRoom.find(FIND_STRUCTURES, {
