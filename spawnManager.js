@@ -20,9 +20,9 @@ module.exports = {
         // Berechnung der Worker-Anzahl mit Berücksichtigung der Storage-Füllung
         let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
                           (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0);
-        let baseWorkers = 2 + extraWorkers + Math.floor(totalContainerEnergy / 500); // Basis von 1 auf 2 erhöht, Container-Energie stärker gewichtet
+        let baseWorkers = 2 + extraWorkers + Math.floor(totalContainerEnergy / 500);
         let storageFillPercentage = storage && storage.store[RESOURCE_ENERGY] > 0 ? (storage.store[RESOURCE_ENERGY] / storage.store.getCapacity(RESOURCE_ENERGY)) : 0;
-        let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 40) : 0; // Erhöht auf 40 für noch aggressivere Skalierung
+        let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 40) : 0;
         roomMemory.minWorkers = Math.min(12, Math.max(2, baseWorkers + additionalWorkers));
 
         let totalRemoteSources = 0;
@@ -71,6 +71,19 @@ module.exports = {
             return;
         }
 
+        // Notfall-Spawn: Harvester und Hauler haben höchste Priorität
+        if (harvesters < roomMemory.minHarvesters && room.energyAvailable >= 300) {
+            spawnCreeps.spawn(spawn, 'harvester', null, room.name);
+            logger.info('Spawning new harvester in ' + room.name + ' (emergency)');
+            return;
+        }
+
+        if (haulers < roomMemory.minHaulers && room.energyAvailable >= 300) {
+            spawnCreeps.spawn(spawn, 'hauler', null, room.name);
+            logger.info('Spawning new hauler in ' + room.name + ' (emergency)');
+            return;
+        }
+
         // Prüfe Aufgaben in Nebenräumen für remoteWorker
         let remoteTasksExist = false;
         let targetRoomForWorker = null;
@@ -92,7 +105,6 @@ module.exports = {
             }
         }
 
-        // Priorität für Worker, wenn Storage voll ist
         if (workers < roomMemory.minWorkers && room.energyAvailable >= 200) {
             let workerRoles = ['upgrader', 'repairer', 'wallRepairer', 'flexible'];
             let existingWorkers = _.filter(Game.creeps, c => c.memory.role === 'worker' && c.memory.homeRoom === room.name);
@@ -117,15 +129,7 @@ module.exports = {
             }
         }
 
-        if (harvesters < roomMemory.minHarvesters && room.energyAvailable >= 300) {
-            spawnCreeps.spawn(spawn, 'harvester', null, room.name);
-            logger.info('Spawning new harvester in ' + room.name);
-            return;
-        } else if (haulers < roomMemory.minHaulers && room.energyAvailable >= 300) {
-            spawnCreeps.spawn(spawn, 'hauler', null, room.name);
-            logger.info('Spawning new hauler in ' + room.name);
-            return;
-        } else if (remoteHarvesters < roomMemory.minRemoteHarvesters && room.energyAvailable >= 300) {
+        if (remoteHarvesters < roomMemory.minRemoteHarvesters && room.energyAvailable >= 300) {
             let targetRoom = null;
             let minHarvesterCount = Infinity;
             for (let remoteRoomName of remoteRooms) {

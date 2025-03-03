@@ -30,6 +30,26 @@ module.exports.run = function(creep) {
     let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
 
     if (creep.memory.working) {
+        // Prüft, ob Hauler vorhanden sind
+        let haulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.homeRoom === creep.room.name).length;
+        if (haulers === 0) {
+            // Notfall: Worker transportiert Energie zu Spawn/Extensions
+            let target = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
+                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            }) || creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            });
+            if (target) {
+                if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    logger.info(creep.name + ': Notfall - Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Liefern');
+                } else {
+                    logger.info(creep.name + ': Notfall - Liefert Energie an ' + target.structureType + ' ' + target.id);
+                }
+                return;
+            }
+        }
+
         // Prüft, ob die gespeicherte Aufgabe noch gültig ist
         let taskValid = false;
         let target = Game.getObjectById(creep.memory.targetId);
@@ -46,7 +66,7 @@ module.exports.run = function(creep) {
             logger.info(creep.name + ': Keine gültige gespeicherte Aufgabe oder Ziel nicht gefunden (task: ' + creep.memory.task + ', targetId: ' + creep.memory.targetId + ')');
         }
 
-        // Wenn die Aufgabe ungültig ist, neue zuweisen
+        // Wenn die Aufgabe ungültig ist oder keine Aufgabe existiert, neue zuweisen
         if (!taskValid || !creep.memory.task) {
             let tasks = taskManager.getWorkerTasks(creep.room);
             taskManager.assignTask(creep, tasks);
@@ -109,19 +129,18 @@ module.exports.run = function(creep) {
         // Bevorzugte Energiequellen: Receiver-Link, Controller-Container, Storage
         let controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
-        })[0]; // Container nahe Controller
+        })[0];
         let storage = creep.room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
-        })[0]; // Storage mit Energie
+        })[0];
         let receiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
             filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
-        })[0]; // Receiver-Link nahe Controller (unabhängig von Container)
+        })[0];
 
         let energySource = null;
         if (receiverLink) {
             energySource = receiverLink; // Höchste Priorität: Receiver-Link
         } else if (controllerContainer && storage) {
-            // Wählt nähere Quelle zwischen Controller-Container und Storage
             let distToController = creep.pos.getRangeTo(controllerContainer);
             let distToStorage = creep.pos.getRangeTo(storage);
             energySource = (distToController < distToStorage) ? controllerContainer : storage;
@@ -139,10 +158,8 @@ module.exports.run = function(creep) {
                 logger.info(creep.name + ': Sammelt Energie aus ' + energySource.structureType + ' ' + energySource.id);
             }
         } else {
-            // Keine direkte Quelle -> ResourceManager verwenden
             logger.info(creep.name + ': Keine direkte Energiequelle verfügbar, sammelt via resourceManager');
             resourceManager.collectEnergy(creep, homeRoom);
-            // Nach Energiesammeln Aufgaben neu prüfen
             if (creep.store[RESOURCE_ENERGY] > 0) {
                 let tasks = taskManager.getWorkerTasks(creep.room);
                 taskManager.assignTask(creep, tasks);
