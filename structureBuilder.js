@@ -42,10 +42,10 @@ module.exports = {
             case 3: maxExtensions = 10; break;
             case 4: maxExtensions = 20; break;
             case 5: maxExtensions = 30; break;
-            case 6: maxExtensions = 40; break; // Hinzugefügt für Level 6
-            case 7: maxExtensions = 50; break; // Für zukünftige Levels
-            case 8: maxExtensions = 60; break; // Für zukünftige Levels
-            default: maxExtensions = 0; // Level 1 oder Fehlerfall
+            case 6: maxExtensions = 40; break;
+            case 7: maxExtensions = 50; break;
+            case 8: maxExtensions = 60; break;
+            default: maxExtensions = 0;
         }
 
         logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);
@@ -184,7 +184,6 @@ module.exports = {
                             filter: s => s.structureType === STRUCTURE_CONTAINER
                         });
                         remoteContainers.forEach(container => {
-                            // Straße vom Storage im Hauptraum zum Container im Nebenraum
                             this.buildPathAcrossRooms(room, storage.pos, container.pos, remoteRoomName);
                         });
                         logger.info(`Built roads from storage in ${room.name} to containers in ${remoteRoomName}`);
@@ -242,14 +241,15 @@ module.exports = {
     buildLinks: function(room) {
         let links = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
         let linkSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
-        let maxLinks = room.controller.level >= 5 ? 2 : 0;
+        let maxLinks = room.controller.level >= 6 ? 3 : (room.controller.level >= 5 ? 2 : 0); // Level 6: 3 Links
 
         logger.info('Links in ' + room.name + ': ' + links + ' built, ' + linkSites + ' sites, max ' + maxLinks + ', energy available: ' + room.energyAvailable);
         if (links + linkSites < maxLinks && room.energyAvailable >= 300) {
             let placed = false;
 
+            // 1. Sender-Link beim Storage
             let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
-            if (!placed && storage) {
+            if (links + linkSites === 0 && !placed && storage) {
                 const storagePos = storage.pos;
                 for (let dx = -1; dx <= 1 && !placed; dx++) {
                     for (let dy = -1; dy <= 1 && !placed; dy++) {
@@ -267,6 +267,7 @@ module.exports = {
                 }
             }
 
+            // 2. Receiver-Link beim Controller
             if (links + linkSites === 1 && !placed) {
                 let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
                     filter: s => s.structureType === STRUCTURE_CONTAINER
@@ -287,6 +288,35 @@ module.exports = {
                             }
                         }
                     }
+                }
+            }
+
+            // 3. Source-Link bei einer Energiequelle (ab Level 6)
+            if (links + linkSites === 2 && room.controller.level >= 6 && !placed) {
+                let sources = room.find(FIND_SOURCES);
+                for (let source of sources) {
+                    let sourceContainer = source.pos.findInRange(FIND_STRUCTURES, 2, {
+                        filter: s => s.structureType === STRUCTURE_CONTAINER
+                    })[0];
+                    if (sourceContainer) {
+                        const containerPos = sourceContainer.pos;
+                        for (let dx = -1; dx <= 1 && !placed; dx++) {
+                            for (let dy = -1; dy <= 1 && !placed; dy++) {
+                                if (dx === 0 && dy === 0) continue;
+                                let x = containerPos.x + dx;
+                                let y = containerPos.y + dy;
+                                if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                                    room.createConstructionSite(x, y, STRUCTURE_LINK);
+                                    logger.info('Placed source link at ' + x + ',' + y + ' near source ' + source.id + ' in ' + room.name);
+                                    placed = true;
+                                    break;
+                                } else {
+                                    logger.warn('Position ' + x + ',' + y + ' blocked for source link in ' + room.name);
+                                }
+                            }
+                        }
+                    }
+                    if (placed) break;
                 }
             }
 
@@ -386,7 +416,6 @@ module.exports = {
         });
     },
 
-    // Neue Funktion: Baut Straßen über Raumgrenzen hinweg
     buildPathAcrossRooms: function(homeRoom, fromPos, toPos, targetRoomName) {
         let path = PathFinder.search(
             fromPos,
@@ -396,7 +425,7 @@ module.exports = {
                 swampCost: 10,
                 roomCallback: function(roomName) {
                     let room = Game.rooms[roomName];
-                    if (!room) return; // Keine Sicht -> Standardkosten
+                    if (!room) return;
                     let costs = new PathFinder.CostMatrix();
 
                     room.find(FIND_STRUCTURES).forEach(function(struct) {
@@ -404,18 +433,18 @@ module.exports = {
                             costs.set(struct.pos.x, struct.pos.y, 1);
                         } else if (struct.structureType !== STRUCTURE_CONTAINER &&
                                    struct.structureType !== STRUCTURE_RAMPART) {
-                            costs.set(struct.pos.x, struct.pos.y, 0xff); // Blockiert
+                            costs.set(struct.pos.x, struct.pos.y, 0xff);
                         }
                     });
 
                     room.find(FIND_CONSTRUCTION_SITES).forEach(function(site) {
                         if (site.structureType !== STRUCTURE_ROAD) {
-                            costs.set(site.pos.x, site.pos.y, 0xff); // Blockiert
+                            costs.set(site.pos.x, site.pos.y, 0xff);
                         }
                     });
 
                     room.find(FIND_CREEPS).forEach(function(creep) {
-                        costs.set(creep.pos.x, creep.pos.y, 0xff); // Creeps blockieren
+                        costs.set(creep.pos.x, creep.pos.y, 0xff);
                     });
 
                     return costs;
