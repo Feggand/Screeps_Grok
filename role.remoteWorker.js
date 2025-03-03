@@ -24,10 +24,38 @@ var roleRemoteWorker = {
             logger.info(`${creep.name}: Switching to working (energy full)`);
         }
 
-        // Energie sammeln aus dem Storage im Hauptraum
+        // Prüfe, ob es Aufgaben im Nebenraum gibt
+        const targetRoomObj = Game.rooms[targetRoom];
+        let hasRemoteTasks = false;
+        if (targetRoomObj) {
+            const repairTargets = targetRoomObj.find(FIND_STRUCTURES, {
+                filter: s => s.hits < s.hitsMax * 0.8 && s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART
+            });
+            const constructionSites = targetRoomObj.find(FIND_CONSTRUCTION_SITES);
+            hasRemoteTasks = repairTargets.length > 0 || constructionSites.length > 0;
+        }
+
+        // Energie sammeln
         if (!creep.memory.working) {
+            // Primär: Energie aus Container im Nebenraum, wenn leer, Aufgabe ansteht und Energie verfügbar ist
+            if (hasRemoteTasks && creep.room.name === targetRoom) {
+                const container = creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+                });
+                if (container) {
+                    if (creep.withdraw(container, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                        logger.info(`${creep.name}: Moving to container ${container.id} in ${targetRoom} to withdraw`);
+                        creep.moveTo(container, { visualizePathStyle: { stroke: '#ffaa00' } });
+                    } else if (creep.withdraw(container, RESOURCE_ENERGY) === OK) {
+                        logger.info(`${creep.name}: Withdrawing energy from container ${container.id} in ${targetRoom}`);
+                    }
+                    return;
+                }
+            }
+
+            // Sekundär: Energie aus Storage im Hauptraum, wenn keine Aufgaben im Nebenraum oder Container leer
             if (creep.room.name !== homeRoom) {
-                logger.info(`${creep.name}: Moving to home room ${homeRoom} to gather energy`);
+                logger.info(`${creep.name}: Moving to home room ${homeRoom} to gather energy from storage`);
                 creep.moveTo(new RoomPosition(25, 25, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
                 return;
             }
@@ -51,21 +79,21 @@ var roleRemoteWorker = {
         }
 
         // Arbeiten: Prüfe Aufgaben in Nebenräumen und Hauptraum
-        const targetRoomObj = Game.rooms[targetRoom];
-        let hasRemoteTasks = false;
+        if (targetRoomObj && hasRemoteTasks) {
+            // Gehe zum Nebenraum, wenn nicht dort
+            if (creep.room.name !== targetRoom) {
+                logger.info(`${creep.name}: Moving to target room ${targetRoom} for repair or construction`);
+                creep.moveTo(new RoomPosition(25, 25, targetRoom), { visualizePathStyle: { stroke: '#ffffff' } });
+                return;
+            }
 
-        if (targetRoomObj) {
             // Priorität 1: Reparaturaufgaben im Nebenraum
             const repairTargets = targetRoomObj.find(FIND_STRUCTURES, {
                 filter: s => s.hits < s.hitsMax * 0.8 && s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART
             });
             if (repairTargets.length > 0) {
-                hasRemoteTasks = true;
                 const target = creep.pos.findClosestByPath(repairTargets);
-                if (creep.room.name !== targetRoom) {
-                    logger.info(`${creep.name}: Moving to target room ${targetRoom} for repair`);
-                    creep.moveTo(new RoomPosition(25, 25, targetRoom), { visualizePathStyle: { stroke: '#ffffff' } });
-                } else if (creep.repair(target) === ERR_NOT_IN_RANGE) {
+                if (creep.repair(target) === ERR_NOT_IN_RANGE) {
                     logger.info(`${creep.name}: Moving to repair ${target.structureType} ${target.id}`);
                     creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                 } else if (creep.repair(target) === OK) {
@@ -77,12 +105,8 @@ var roleRemoteWorker = {
             // Priorität 2: Bauaufgaben im Nebenraum
             const constructionSites = targetRoomObj.find(FIND_CONSTRUCTION_SITES);
             if (constructionSites.length > 0) {
-                hasRemoteTasks = true;
                 const target = creep.pos.findClosestByPath(constructionSites);
-                if (creep.room.name !== targetRoom) {
-                    logger.info(`${creep.name}: Moving to target room ${targetRoom} for construction`);
-                    creep.moveTo(new RoomPosition(25, 25, targetRoom), { visualizePathStyle: { stroke: '#ffffff' } });
-                } else if (creep.build(target) === ERR_NOT_IN_RANGE) {
+                if (creep.build(target) === ERR_NOT_IN_RANGE) {
                     logger.info(`${creep.name}: Moving to build ${target.structureType} at ${target.pos}`);
                     creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                 } else if (creep.build(target) === OK) {
