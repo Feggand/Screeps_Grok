@@ -42,7 +42,10 @@ module.exports = {
             case 3: maxExtensions = 10; break;
             case 4: maxExtensions = 20; break;
             case 5: maxExtensions = 30; break;
-            default: maxExtensions = 20;
+            case 6: maxExtensions = 40; break; // Hinzugefügt für Level 6
+            case 7: maxExtensions = 50; break; // Für zukünftige Levels
+            case 8: maxExtensions = 60; break; // Für zukünftige Levels
+            default: maxExtensions = 0; // Level 1 oder Fehlerfall
         }
 
         logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);

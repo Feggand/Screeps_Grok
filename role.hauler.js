@@ -266,42 +266,43 @@ module.exports.run = function(creep) {
         }
     } else if (creep.memory.task === 'collect' && !creep.memory.working) {
         let target = Game.getObjectById(creep.memory.targetId);
-        if (target) {
-            if (target instanceof Resource) {
-                if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
-                    logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
-                } else if (creep.pickup(target) === OK) {
-                    logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
-                    if (target.amount === 0) {
-                        delete creep.memory.task;
-                        delete creep.memory.targetId;
-                    }
-                } else {
-                    logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id);
-                    delete creep.memory.task;
-                    delete creep.memory.targetId;
-                }
-            } else if (target.store) {
-                if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
-                    logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
-                } else if (creep.withdraw(target, RESOURCE_ENERGY) === OK) {
-                    logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
-                    if (target.store[RESOURCE_ENERGY] === 0) {
-                        delete creep.memory.task;
-                        delete creep.memory.targetId;
-                    }
-                } else {
-                    logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id);
-                    delete creep.memory.task;
-                    delete creep.memory.targetId;
-                }
-            }
-        } else {
+        if (!target) {
             logger.info(creep.name + ': Collect-Ziel ungültig, Aufgabe zurückgesetzt');
             delete creep.memory.task;
             delete creep.memory.targetId;
+            return;
+        }
+
+        if (target instanceof Resource) {
+            if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
+            } else if (creep.pickup(target) === OK) {
+                logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
+                if (target.amount === 0) {
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
+                }
+            } else {
+                logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id);
+                delete creep.memory.task;
+                delete creep.memory.targetId;
+            }
+        } else if (target.store) {
+            if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
+                creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
+            } else if (creep.withdraw(target, RESOURCE_ENERGY) === OK) {
+                logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
+                if (target.store[RESOURCE_ENERGY] === 0) {
+                    delete creep.memory.task;
+                    delete creep.memory.targetId;
+                }
+            } else {
+                logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id);
+                delete creep.memory.task;
+                delete creep.memory.targetId;
+            }
         }
     } else if (creep.memory.task === 'idle') {
         let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
