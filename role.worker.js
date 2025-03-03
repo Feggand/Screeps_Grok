@@ -1,45 +1,45 @@
 // role.worker.js
 // Logik für Worker-Creeps, die bauen, reparieren und upgraden
 
-var resourceManager = require('resourceManager'); // Importiert Resource-Manager-Modul
-var taskManager = require('taskManager'); // Importiert Task-Manager-Modul
-var logger = require('logger'); // Importiert Logging-Modul
+var resourceManager = require('resourceManager');
+var taskManager = require('taskManager');
+var logger = require('logger');
 
 module.exports.run = function(creep) {
     // Aktualisiert den Arbeitsstatus basierend auf der Energie im Creep
-    if (creep.store[RESOURCE_ENERGY] === 0) { // Keine Energie
+    if (creep.store[RESOURCE_ENERGY] === 0) {
         if (creep.memory.working) {
-            creep.memory.working = false; // Wechselt zu Energiesammeln
+            creep.memory.working = false;
             logger.info(creep.name + ': Wechselt zu Energie sammeln (keine Energie).');
             if (creep.memory.task !== 'idle') {
-                delete creep.memory.task; // Löscht aktuelle Aufgabe
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         }
-    } else if (creep.store.getFreeCapacity() === 0) { // Voll mit Energie
+    } else if (creep.store.getFreeCapacity() === 0) {
         if (!creep.memory.working) {
-            creep.memory.working = true; // Wechselt zu Arbeiten
+            creep.memory.working = true;
             logger.info(creep.name + ': Wechselt zu Arbeiten (voll mit Energie).');
         }
-    } else if (creep.store[RESOURCE_ENERGY] > 0) { // Einige Energie vorhanden
-        creep.memory.working = true; // Wechselt zu Arbeiten
+    } else if (creep.store[RESOURCE_ENERGY] > 0) {
+        creep.memory.working = true;
         logger.info(creep.name + ': Wechselt zu Arbeiten (Teilenergie).');
     }
 
     // Bestimmt den Heimatraum des Creeps
     let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
 
-    if (creep.memory.working) { // Arbeitsmodus
+    if (creep.memory.working) {
         // Prüft, ob die gespeicherte Aufgabe noch gültig ist
         let taskValid = false;
-        let target = Game.getObjectById(creep.memory.targetId); // Holt Ziel der Aufgabe
+        let target = Game.getObjectById(creep.memory.targetId);
         if (creep.memory.task && target) {
             if (creep.memory.task === 'repair') {
-                taskValid = target.hits < target.hitsMax; // Reparatur gültig, wenn Ziel beschädigt
+                taskValid = target.hits < target.hitsMax;
             } else if (creep.memory.task === 'construct') {
-                taskValid = true; // Baustelle immer gültig, solange sie existiert
+                taskValid = true;
             } else if (creep.memory.task === 'upgrade') {
-                taskValid = true; // Upgrade immer gültig, solange Controller existiert
+                taskValid = true;
             }
             logger.info(creep.name + ': Aufgabe ' + creep.memory.task + ' validiert, gültig: ' + taskValid);
         } else {
@@ -48,60 +48,60 @@ module.exports.run = function(creep) {
 
         // Wenn die Aufgabe ungültig ist, neue zuweisen
         if (!taskValid || !creep.memory.task) {
-            let tasks = taskManager.getWorkerTasks(creep.room); // Holt verfügbare Worker-Aufgaben
-            taskManager.assignTask(creep, tasks); // Weist höchstpriorisierte Aufgabe zu
+            let tasks = taskManager.getWorkerTasks(creep.room);
+            taskManager.assignTask(creep, tasks);
         }
 
         // Führt die zugewiesene Aufgabe aus
         if (creep.memory.task === 'repair') {
-            let target = Game.getObjectById(creep.memory.targetId); // Reparaturziel
+            let target = Game.getObjectById(creep.memory.targetId);
             if (target && target.hits < target.hitsMax) {
                 if (creep.repair(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Ziel
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                     logger.info(creep.name + ': Bewegt sich zur Reparatur von ' + target.structureType);
                 } else {
-                    logger.info(creep.name + ': Repariert ' + target.structureType); // Repariert Struktur
+                    logger.info(creep.name + ': Repariert ' + target.structureType);
                 }
             } else {
                 logger.info(creep.name + ': Reparatur-Ziel ungültig oder vollständig repariert');
-                delete creep.memory.task; // Aufgabe zurücksetzen
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         } else if (creep.memory.task === 'construct') {
-            let target = Game.getObjectById(creep.memory.targetId); // Baustelle
+            let target = Game.getObjectById(creep.memory.targetId);
             if (target) {
-                let result = creep.build(target); // Baut an der Baustelle
+                let result = creep.build(target);
                 if (result === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zur Baustelle
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
                     logger.info(creep.name + ': Bewegt sich zur Baustelle ' + target.id + ' (' + target.structureType + ')');
                 } else if (result === OK) {
-                    logger.info(creep.name + ': Baut ' + target.structureType + ' (' + target.id + ')'); // Baut Struktur
+                    logger.info(creep.name + ': Baut ' + target.structureType + ' (' + target.id + ')');
                 } else {
-                    logger.error(creep.name + ': Fehler beim Bauen von ' + target.structureType + ' (' + target.id + '): ' + result); // Fehler protokollieren
+                    logger.error(creep.name + ': Fehler beim Bauen von ' + target.structureType + ' (' + target.id + '): ' + result);
                 }
             } else {
                 logger.info(creep.name + ': Baustelle ' + creep.memory.targetId + ' nicht gefunden, Aufgabe zurückgesetzt');
-                delete creep.memory.task; // Aufgabe zurücksetzen
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         } else if (creep.memory.task === 'upgrade') {
-            let controller = Game.getObjectById(creep.memory.targetId); // Controller
+            let controller = Game.getObjectById(creep.memory.targetId);
             if (controller) {
                 if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Controller
+                    creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } });
                     logger.info(creep.name + ': Bewegt sich zum Controller zum Upgraden');
                 } else {
-                    logger.info(creep.name + ': Upgraded Controller'); // Upgradet Controller
+                    logger.info(creep.name + ': Upgraded Controller');
                 }
             } else {
                 logger.info(creep.name + ': Controller nicht gefunden, Aufgabe zurückgesetzt');
-                delete creep.memory.task; // Aufgabe zurücksetzen
+                delete creep.memory.task;
                 delete creep.memory.targetId;
             }
         } else if (creep.memory.task === 'idle') {
-            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS); // Nächstgelegener Spawn
+            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
             if (spawn) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zum Spawn
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
                 logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn');
             }
         }
@@ -113,9 +113,9 @@ module.exports.run = function(creep) {
         let storage = creep.room.find(FIND_STRUCTURES, {
             filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
         })[0]; // Storage mit Energie
-        let receiverLink = creep.room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_LINK && s.pos.getRangeTo(controllerContainer) <= 2 && s.store[RESOURCE_ENERGY] > 0
-        })[0]; // Receiver-Link nahe Controller-Container
+        let receiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
+            filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
+        })[0]; // Receiver-Link nahe Controller (unabhängig von Container)
 
         let energySource = null;
         if (receiverLink) {
@@ -133,10 +133,10 @@ module.exports.run = function(creep) {
 
         if (energySource) {
             if (creep.withdraw(energySource, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(energySource, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zur Quelle
+                creep.moveTo(energySource, { visualizePathStyle: { stroke: '#ffaa00' } });
                 logger.info(creep.name + ': Bewegt sich zu ' + energySource.structureType + ' ' + energySource.id + ' zum Sammeln');
             } else {
-                logger.info(creep.name + ': Sammelt Energie aus ' + energySource.structureType + ' ' + energySource.id); // Entnimmt Energie
+                logger.info(creep.name + ': Sammelt Energie aus ' + energySource.structureType + ' ' + energySource.id);
             }
         } else {
             // Keine direkte Quelle -> ResourceManager verwenden
@@ -145,7 +145,7 @@ module.exports.run = function(creep) {
             // Nach Energiesammeln Aufgaben neu prüfen
             if (creep.store[RESOURCE_ENERGY] > 0) {
                 let tasks = taskManager.getWorkerTasks(creep.room);
-                taskManager.assignTask(creep, tasks); // Weist neue Aufgabe zu
+                taskManager.assignTask(creep, tasks);
             }
         }
     }
