@@ -31,6 +31,12 @@ module.exports = {
         if (room.controller.level >= 5) {
             this.buildLinks(room);
         }
+        if (room.controller.level >= 6) {
+            this.buildExtractor(room);
+            this.buildLabs(room, spawn);
+            this.buildRemoteExtractors(room);
+            this.buildRoadsToExtractors(room);
+        }
     },
 
     buildExtensions: function(room, spawn) {
@@ -173,7 +179,6 @@ module.exports = {
             logger.info('Built extended roads in ' + room.name);
         }
 
-        // Neue Logik: Straßen vom Storage zu Containern in Nebenräumen
         if (room.controller.level >= 4 && !roomMemory.roadsToRemoteBuilt) {
             let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
             if (storage && roomMemory.remoteRooms && roomMemory.remoteRooms.length > 0) {
@@ -197,6 +202,55 @@ module.exports = {
             } else if (!roomMemory.remoteRooms) {
                 logger.warn(`No remote rooms defined in ${room.name} memory, skipping remote roads`);
             }
+        }
+    },
+
+    buildRoadsToExtractors: function(room) {
+        let roomMemory = Memory.rooms[room.name];
+        if (roomMemory.roadsToExtractorsBuilt) return;
+
+        let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+        if (!storage) {
+            logger.warn(`No storage found in ${room.name}, cannot build roads to extractors`);
+            return;
+        }
+
+        let builtRoads = false;
+
+        // Straßen zu Extractoren im Hauptraum
+        let localExtractors = room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_EXTRACTOR
+        });
+        localExtractors.forEach(extractor => {
+            this.buildPath(room, storage.pos, extractor.pos);
+            logger.info(`Built road from storage to extractor at ${extractor.pos} in ${room.name}`);
+            builtRoads = true;
+        });
+
+        // Straßen zu Extractoren in Nebenräumen
+        if (roomMemory.remoteRooms && roomMemory.remoteRooms.length > 0) {
+            roomMemory.remoteRooms.forEach(remoteRoomName => {
+                let remoteRoom = Game.rooms[remoteRoomName];
+                if (remoteRoom) {
+                    let remoteExtractors = remoteRoom.find(FIND_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_EXTRACTOR
+                    });
+                    remoteExtractors.forEach(extractor => {
+                        this.buildPathAcrossRooms(room, storage.pos, extractor.pos, remoteRoomName);
+                        logger.info(`Built road from storage in ${room.name} to extractor at ${extractor.pos} in ${remoteRoomName}`);
+                        builtRoads = true;
+                    });
+                } else {
+                    logger.warn(`Remote room ${remoteRoomName} not visible, skipping road construction to extractors`);
+                }
+            });
+        }
+
+        if (builtRoads) {
+            roomMemory.roadsToExtractorsBuilt = true;
+            logger.info(`Completed building roads to extractors in ${room.name} and its remote rooms`);
+        } else {
+            logger.info(`No extractors found to build roads to in ${room.name} or its remote rooms`);
         }
     },
 
@@ -241,13 +295,12 @@ module.exports = {
     buildLinks: function(room) {
         let links = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
         let linkSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
-        let maxLinks = room.controller.level >= 6 ? 3 : (room.controller.level >= 5 ? 2 : 0); // Level 6: 3 Links
+        let maxLinks = room.controller.level >= 6 ? 3 : (room.controller.level >= 5 ? 2 : 0);
 
         logger.info('Links in ' + room.name + ': ' + links + ' built, ' + linkSites + ' sites, max ' + maxLinks + ', energy available: ' + room.energyAvailable);
         if (links + linkSites < maxLinks && room.energyAvailable >= 300) {
             let placed = false;
 
-            // 1. Sender-Link beim Storage
             let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
             if (links + linkSites === 0 && !placed && storage) {
                 const storagePos = storage.pos;
@@ -267,7 +320,6 @@ module.exports = {
                 }
             }
 
-            // 2. Receiver-Link beim Controller
             if (links + linkSites === 1 && !placed) {
                 let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
                     filter: s => s.structureType === STRUCTURE_CONTAINER
@@ -291,7 +343,6 @@ module.exports = {
                 }
             }
 
-            // 3. Source-Link bei einer Energiequelle (ab Level 6)
             if (links + linkSites === 2 && room.controller.level >= 6 && !placed) {
                 let sources = room.find(FIND_SOURCES);
                 for (let source of sources) {
@@ -383,6 +434,99 @@ module.exports = {
                 }
             });
         }
+    },
+
+    buildExtractor: function(room) {
+        let mineral = room.find(FIND_MINERALS)[0];
+        let extractor = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
+        let extractorSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+
+        logger.info('Extractor in ' + room.name + ': ' + (extractor ? 1 : 0) + ' built, ' + extractorSites + ' sites');
+        if (!extractor && extractorSites === 0 && room.energyAvailable >= 200) {
+            let result = room.createConstructionSite(mineral.pos, STRUCTURE_EXTRACTOR);
+            if (result === OK) {
+                logger.info('Placed extractor at ' + mineral.pos + ' in ' + room.name);
+            } else {
+                logger.warn('Failed to place extractor at ' + mineral.pos + ' in ' + room.name + ': ' + result);
+            }
+        }
+    },
+
+    buildLabs: function(room, spawn) {
+        let labs = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB }).length;
+        let labSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LAB }).length;
+        let maxLabs = room.controller.level >= 6 ? 3 : 0;
+
+        logger.info('Labs in ' + room.name + ': ' + labs + ' built, ' + labSites + ' sites, max ' + maxLabs);
+        if (labs + labSites < maxLabs && room.energyAvailable >= 300) {
+            let placed = 0;
+            let storage = room.storage;
+            if (!storage) {
+                logger.warn('No storage found in ' + room.name + ', skipping lab placement');
+                return;
+            }
+
+            const basePos = storage.pos;
+            const positions = [
+                { x: basePos.x + 1, y: basePos.y + 1 },
+                { x: basePos.x + 2, y: basePos.y + 1 },
+                { x: basePos.x + 1, y: basePos.y + 2 }
+            ];
+
+            for (let pos of positions) {
+                if (labs + labSites + placed >= maxLabs) break;
+                if (pos.x >= 0 && pos.x < 50 && pos.y >= 0 && pos.y < 50 && this.canPlaceStructure(room, pos.x, pos.y)) {
+                    let result = room.createConstructionSite(pos.x, pos.y, STRUCTURE_LAB);
+                    if (result === OK) {
+                        logger.info('Placed lab at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+                        placed++;
+                    } else {
+                        logger.warn('Failed to place lab at ' + pos.x + ',' + pos.y + ' in ' + room.name + ': ' + result);
+                    }
+                }
+            }
+
+            if (placed === 0) {
+                logger.warn('No valid positions found for new labs in ' + room.name);
+            }
+        } else {
+            logger.info('No new labs needed in ' + room.name + ' or insufficient energy');
+        }
+    },
+
+    buildRemoteExtractors: function(room) {
+        let roomMemory = Memory.rooms[room.name];
+        if (!roomMemory.remoteRooms || roomMemory.remoteRooms.length === 0) return;
+
+        let totalExtractors = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+        roomMemory.remoteRooms.forEach(remoteRoomName => {
+            let remoteRoom = Game.rooms[remoteRoomName];
+            if (remoteRoom) {
+                totalExtractors += remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+            }
+        });
+
+        let maxExtractors = room.controller.level >= 7 ? 2 : 1; // 1 bei RCL 6, 2 bei RCL 7
+        if (totalExtractors >= maxExtractors) return;
+
+        roomMemory.remoteRooms.forEach(remoteRoomName => {
+            let remoteRoom = Game.rooms[remoteRoomName];
+            if (remoteRoom && room.energyAvailable >= 200 && totalExtractors < maxExtractors) {
+                let mineral = remoteRoom.find(FIND_MINERALS)[0];
+                let extractor = remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
+                let extractorSites = remoteRoom.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+
+                if (!extractor && extractorSites === 0) {
+                    let result = remoteRoom.createConstructionSite(mineral.pos, STRUCTURE_EXTRACTOR);
+                    if (result === OK) {
+                        logger.info('Placed extractor at ' + mineral.pos + ' in ' + remoteRoomName);
+                        totalExtractors++;
+                    } else {
+                        logger.warn('Failed to place extractor at ' + mineral.pos + ' in ' + remoteRoomName + ': ' + result);
+                    }
+                }
+            }
+        });
     },
 
     canPlaceStructure: function(room, x, y) {

@@ -28,6 +28,11 @@ module.exports = {
             let claimParts = Math.max(1, Math.min(Math.floor(energyCapacity / 650), 2));
             let moveParts = claimParts;
             minEnergyRequired = (claimParts * 600) + (moveParts * 50);
+        } else if (role === 'mineralHarvester') {
+            let workParts = Math.max(3, Math.min(Math.floor((energyCapacity - 100) / 100), 6)); // Mindestens 3 WORK, Platz für CARRY+MOVE
+            let carryParts = 1; // Mindestens 1 CARRY zum Transportieren
+            let moveParts = 1; // Nur 1 MOVE, da größtenteils stationär
+            minEnergyRequired = (workParts * 100) + (carryParts * 50) + (moveParts * 50); // z. B. 400 für [WORK, WORK, WORK, CARRY, MOVE]
         }
 
         if (haulers > 0 && energyAvailable < minEnergyRequired) {
@@ -68,6 +73,14 @@ module.exports = {
             body = totalCost <= energyAvailable ? 
                 Array(claimParts).fill(CLAIM).concat(Array(moveParts).fill(MOVE)) : 
                 [CLAIM, MOVE];
+        } else if (role === 'mineralHarvester') {
+            let workParts = Math.max(3, Math.min(Math.floor((energyAvailable - 100) / 100), 6)); // Skaliert, mindestens 3 WORK
+            let carryParts = 1; // 1 CARRY zum Transportieren
+            let moveParts = 1; // 1 MOVE
+            let totalCost = (workParts * 100) + (carryParts * 50) + (moveParts * 50);
+            body = totalCost <= energyAvailable ? 
+                Array(workParts).fill(WORK).concat(Array(carryParts).fill(CARRY)).concat(Array(moveParts).fill(MOVE)) : 
+                [WORK, WORK, WORK, CARRY, MOVE]; // Fallback: 400 Energie
         }
 
         let name = role + '_' + Game.time;
@@ -118,6 +131,8 @@ module.exports = {
                 logger.warn('No targetRoom for reserver in ' + homeRoom + ', skipping spawn');
                 return;
             }
+        } else if (role === 'mineralHarvester') {
+            memory.targetRoom = targetRoom || spawn.room.name;
         }
 
         let result = spawn.spawnCreep(body, name, { memory: memory });

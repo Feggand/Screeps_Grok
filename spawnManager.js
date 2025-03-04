@@ -1,6 +1,4 @@
 // spawnManager.js
-// Modul zur Verwaltung der Spawns und Entscheidung, welche Creeps gespawnt werden
-
 var spawnCreeps = require('spawnCreeps');
 var logger = require('logger');
 
@@ -17,7 +15,6 @@ module.exports = {
         roomMemory.minHarvesters = sources.length;
         roomMemory.minHaulers = Math.min(3, Math.max(2, Math.ceil(totalContainerEnergy / 1000)));
         
-        // Berechnung der Worker-Anzahl mit Berücksichtigung der Storage-Füllung
         let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
                           (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0);
         let baseWorkers = 2 + extraWorkers + Math.floor(totalContainerEnergy / 500);
@@ -44,6 +41,16 @@ module.exports = {
         roomMemory.minRemoteHaulers = remoteRooms.length * 2;
         roomMemory.minRemoteWorkers = remoteRooms.length;
 
+        // Mineral-Harvester-Anforderungen basierend auf verfügbaren Extractoren
+        let extractorCount = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+        remoteRooms.forEach(remoteRoomName => {
+            const remoteRoom = Game.rooms[remoteRoomName];
+            if (remoteRoom) {
+                extractorCount += remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+            }
+        });
+        roomMemory.minMineralHarvesters = room.controller.level >= 6 ? Math.min(extractorCount, 2) : 0; // Maximal 2, abhängig von Extractoren
+
         let creeps = _.filter(Game.creeps, c => c.memory.homeRoom === room.name || (!c.memory.homeRoom && c.room.name === room.name));
         let harvesters = _.countBy(creeps, 'memory.role').harvester || 0;
         let haulers = _.countBy(creeps, 'memory.role').hauler || 0;
@@ -52,6 +59,7 @@ module.exports = {
         let remoteHaulers = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.homeRoom === room.name).length;
         let remoteWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.homeRoom === room.name).length;
         let reservers = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.homeRoom === room.name).length;
+        let mineralHarvesters = _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.memory.homeRoom === room.name).length;
 
         logger.info('Room ' + room.name + ': Harvesters=' + harvesters + '/' + roomMemory.minHarvesters + 
                     ', Haulers=' + haulers + '/' + roomMemory.minHaulers + 
@@ -60,6 +68,7 @@ module.exports = {
                     ', RemoteHaulers=' + remoteHaulers + '/' + roomMemory.minRemoteHaulers +
                     ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
                     ', Reservers=' + reservers + '/' + remoteRooms.length +
+                    ', MineralHarvesters=' + mineralHarvesters + '/' + roomMemory.minMineralHarvesters +
                     ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy +
                     ', StorageFill=' + (storageFillPercentage * 100).toFixed(1) + '%');
 
@@ -173,6 +182,26 @@ module.exports = {
             spawnCreeps.spawn(spawn, 'remoteWorker', targetRoomForWorker, room.name);
             logger.info('Spawning new remoteWorker for ' + targetRoomForWorker + ' in ' + room.name);
             return;
+        } else if (mineralHarvesters < roomMemory.minMineralHarvesters && room.energyAvailable >= 350) {
+            let targetRoom = null;
+            if (mineralHarvesters === 0 && room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length > 0) {
+                targetRoom = room.name; // W6N1, wenn Extractor vorhanden
+            } else if (mineralHarvesters === 1) {
+                for (let remoteRoomName of remoteRooms) {
+                    let remoteRoom = Game.rooms[remoteRoomName];
+                    if (remoteRoom && remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length > 0) {
+                        targetRoom = remoteRoomName; // Erster Nebenraum mit Extractor
+                        break;
+                    }
+                }
+            }
+            if (targetRoom) {
+                spawnCreeps.spawn(spawn, 'mineralHarvester', targetRoom, room.name);
+                logger.info('Spawning new mineralHarvester for ' + targetRoom + ' in ' + room.name);
+                return;
+            } else {
+                logger.info('No suitable room with extractor found for mineralHarvester in ' + room.name);
+            }
         } else {
             logger.info('No spawning needed in ' + room.name + ': All minimum requirements met or exceeded');
         }
