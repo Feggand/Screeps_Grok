@@ -1,10 +1,10 @@
 // structureBuilder.js
 // Modul zum Bau von Strukturen in Räumen basierend auf Controller-Level und verfügbarer Energie
 
-var logger = require('logger');
+var logger = require('logger'); // Importiert Logging-Modul für Protokollierung
 
 module.exports = {
-    buildStructures: function(room) {
+    buildStructures: function(room, cachedData) {
         let roomMemory = Memory.rooms[room.name] || {};
         if (!roomMemory.isMyRoom) {
             this.buildRemoteStructures(room);
@@ -14,34 +14,47 @@ module.exports = {
         let spawn = room.find(FIND_MY_SPAWNS)[0];
         if (!spawn) return;
 
+        // Cached Daten aus Memory nutzen, falls verfügbar, oder neu abrufen
+        let localCachedData = roomMemory.cachedStructures || {};
+        if (!localCachedData.lastUpdate || Game.time - localCachedData.lastUpdate >= 10) { // Aktualisiere alle 10 Ticks
+            localCachedData = {
+                structures: room.find(FIND_STRUCTURES), // Cached Strukturen im Raum
+                constructionSites: room.find(FIND_CONSTRUCTION_SITES), // Cached Baustellen
+                sources: room.find(FIND_SOURCES), // Cached Quellen
+                lastUpdate: Game.time // Zeitstempel der letzten Aktualisierung
+            };
+            roomMemory.cachedStructures = localCachedData; // Speichere im Memory
+            logger.info(`Updated cached data for ${room.name} at tick ${Game.time}`);
+        }
+
         if (room.controller.level >= 2) {
-            this.buildExtensions(room, spawn);
-            this.buildContainers(room);
-            this.buildControllerContainer(room);
-            this.buildRoads(room, spawn);
+            this.buildExtensions(room, spawn, localCachedData);
+            this.buildContainers(room, localCachedData);
+            this.buildControllerContainer(room, localCachedData); // Nutze lokale Cached Daten
+            this.buildRoads(room, spawn, localCachedData);
         }
         if (room.controller.level >= 3) {
-            this.buildTowers(room, spawn);
-            this.buildRemoteContainers(room);
-            this.buildDefenses(room, spawn);
+            this.buildTowers(room, spawn, localCachedData);
+            this.buildRemoteContainers(room, localCachedData);
+            this.buildDefenses(room, spawn, localCachedData);
         }
         if (room.controller.level >= 4) {
-            this.buildStorage(room, spawn);
+            this.buildStorage(room, spawn, localCachedData);
         }
         if (room.controller.level >= 5) {
-            this.buildLinks(room);
+            this.buildLinks(room, localCachedData);
         }
         if (room.controller.level >= 6) {
-            this.buildExtractor(room);
-            this.buildLabs(room, spawn);
-            this.buildRemoteExtractors(room);
-            this.buildRoadsToExtractors(room);
+            this.buildExtractor(room, localCachedData);
+            this.buildLabs(room, spawn, localCachedData);
+            this.buildRemoteExtractors(room, localCachedData);
+            this.buildRoadsToExtractors(room, localCachedData);
         }
     },
 
-    buildExtensions: function(room, spawn) {
-        let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
-        let extensionSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTENSION }).length;
+    buildExtensions: function(room, spawn, cachedData) {
+        let extensions = cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTENSION).length; // Nutzt cached Strukturen
+        let extensionSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_EXTENSION).length; // Nutzt cached Baustellen
         let maxExtensions;
         switch (room.controller.level) {
             case 2: maxExtensions = 5; break;
@@ -54,7 +67,7 @@ module.exports = {
             default: maxExtensions = 0;
         }
 
-        logger.info('Extensions in ' + room.name + ': ' + extensions + ' built, ' + extensionSites + ' sites, max ' + maxExtensions);
+        logger.info(`Extensions in ${room.name}: ${extensions} built, ${extensionSites} sites, max ${maxExtensions}`);
         if (extensions + extensionSites < maxExtensions && room.energyAvailable >= 50) {
             let placed = 0;
             const maxDistance = 5;
@@ -68,65 +81,78 @@ module.exports = {
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance > 2 && distance <= maxDistance && x >= 0 && x < 50 && y >= 0 && y < 50) {
-                        if (this.canPlaceStructure(room, x, y)) {
+                        if (this.canPlaceStructure(room, x, y, cachedData)) {
                             room.createConstructionSite(x, y, STRUCTURE_EXTENSION);
-                            logger.info('Placed extension at ' + x + ',' + y + ' in ' + room.name);
+                            logger.info(`Placed extension at ${x},${y} in ${room.name}`);
                             placed++;
                         } else {
-                            logger.warn('Position ' + x + ',' + y + ' blocked for extension in ' + room.name);
+                            logger.warn(`Position ${x},${y} blocked for extension in ${room.name}`);
                         }
                     }
                 }
             }
 
             if (extensions + extensionSites + placed >= maxExtensions) {
-                logger.info('Max extensions reached in ' + room.name);
+                logger.info(`Max extensions reached in ${room.name}`);
             } else if (placed === 0) {
-                logger.warn('No valid positions found for new extensions in ' + room.name);
+                logger.warn(`No valid positions found for new extensions in ${room.name}`);
             }
         } else {
-            logger.info('No new extensions needed in ' + room.name + ' or insufficient energy');
+            logger.info(`No new extensions needed in ${room.name} or insufficient energy`);
         }
     },
 
-    buildStorage: function(room, spawn) {
-        let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
-        let storageSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_STORAGE }).length;
-        logger.info('Storage in ' + room.name + ': ' + (storage ? 1 : 0) + ' built, ' + storageSites + ' sites');
+    buildStorage: function(room, spawn, cachedData) {
+        let storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE); // Nutzt cached Strukturen
+        let storageSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_STORAGE).length; // Nutzt cached Baustellen
+        logger.info(`Storage in ${room.name}: ${storage ? 1 : 0} built, ${storageSites} sites`);
         if (!storage && storageSites === 0 && room.energyAvailable >= 150) {
             let pos = { x: spawn.pos.x, y: spawn.pos.y + 3 };
-            if (this.canPlaceStructure(room, pos.x, pos.y)) {
+            if (this.canPlaceStructure(room, pos.x, pos.y, cachedData)) {
                 room.createConstructionSite(pos.x, pos.y, STRUCTURE_STORAGE);
-                logger.info('Placed storage at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+                logger.info(`Placed storage at ${pos.x},${pos.y} in ${room.name}`);
             } else {
-                logger.warn('Storage position ' + pos.x + ',' + pos.y + ' blocked in ' + room.name);
+                logger.warn(`Storage position ${pos.x},${pos.y} blocked in ${room.name}`);
             }
         }
     },
 
-    buildContainers: function(room) {
-        let sources = room.find(FIND_SOURCES);
+    buildContainers: function(room, cachedData) {
+        let sources = cachedData.sources; // Nutzt cached Quellen
         sources.forEach(source => {
-            let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
-            let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+            // Filtert gecachte Strukturen und Baustellen basierend auf der Nähe zu source.pos
+            let nearbyContainers = cachedData.structures.filter(s => 
+                s.structureType === STRUCTURE_CONTAINER && 
+                this.getChebyshevDistance(s.pos, source.pos) <= 1
+            );
+            let nearbySites = cachedData.constructionSites.filter(s => 
+                s.structureType === STRUCTURE_CONTAINER && 
+                this.getChebyshevDistance(s.pos, source.pos) <= 1
+            );
+            let nearbyContainer = nearbyContainers[0]; // Erster passender Container
+            let nearbySite = nearbySites[0]; // Erste passende Baustelle
             if (!nearbyContainer && !nearbySite && room.energyAvailable >= 50) {
-                this.placeContainerNear(room, source.pos);
+                this.placeContainerNear(room, source.pos, cachedData);
             }
         });
     },
 
-    buildControllerContainer: function(room) {
+    buildControllerContainer: function(room, cachedData) {
         if (!room.controller || !room.controller.my) return;
 
-        let containersNearController = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+        // Fallback, falls cachedData nicht definiert ist
+        let structures = cachedData ? cachedData.structures : room.find(FIND_STRUCTURES);
+        let constructionSites = cachedData ? cachedData.constructionSites : room.find(FIND_CONSTRUCTION_SITES);
+
+        let containersNearController = room.controller.pos.findInRange(structures, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER
         });
-        let constructionSitesNearController = room.controller.pos.findInRange(FIND_CONSTRUCTION_SITES, 3, {
+        let constructionSitesNearController = room.controller.pos.findInRange(constructionSites, 3, {
             filter: s => s.structureType === STRUCTURE_CONTAINER
         });
 
         if (containersNearController.length > 0 || constructionSitesNearController.length > 0) {
-            logger.info('Room ' + room.name + ': Container or construction site already exists near controller');
+            logger.info(`Room ${room.name}: Container or construction site already exists near controller`);
             return;
         }
 
@@ -137,7 +163,7 @@ module.exports = {
                 let y = room.controller.pos.y + dy;
                 let distance = Math.sqrt(dx * dx + dy * dy);
                 if (distance <= 3 && x >= 0 && x < 50 && y >= 0 && y < 50) {
-                    if (this.canPlaceStructure(room, x, y)) {
+                    if (this.canPlaceStructure(room, x, y, cachedData)) {
                         pos = new RoomPosition(x, y, room.name);
                         break;
                     }
@@ -148,39 +174,39 @@ module.exports = {
         if (pos && room.energyAvailable >= 50) {
             let result = room.createConstructionSite(pos, STRUCTURE_CONTAINER);
             if (result === OK) {
-                logger.info('Room ' + room.name + ': Placed controller container construction site at ' + pos);
+                logger.info(`Room ${room.name}: Placed controller container construction site at ${pos}`);
             } else {
-                logger.error('Room ' + room.name + ': Failed to place controller container at ' + pos + ': ' + result);
+                logger.error(`Room ${room.name}: Failed to place controller container at ${pos}: ${result}`);
             }
         } else if (!pos) {
-            logger.warn('Room ' + room.name + ': No valid position found for controller container');
+            logger.warn(`Room ${room.name}: No valid position found for controller container`);
         } else {
-            logger.info('Room ' + room.name + ': Insufficient energy for controller container');
+            logger.info(`Room ${room.name}: Insufficient energy for controller container`);
         }
     },
 
-    buildRoads: function(room, spawn) {
+    buildRoads: function(room, spawn, cachedData) {
         let roomMemory = Memory.rooms[room.name];
         if (!roomMemory.roadsBuilt) {
-            let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+            let containers = cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER); // Nutzt cached Strukturen
             containers.forEach(container => {
-                this.buildPath(room, container.pos, spawn.pos);
-                this.buildPath(room, container.pos, room.controller.pos);
+                this.buildPath(room, container.pos, spawn.pos, cachedData);
+                this.buildPath(room, container.pos, room.controller.pos, cachedData);
             });
             roomMemory.roadsBuilt = true;
             logger.info('Built initial roads in ' + room.name);
         }
         if (room.controller.level >= 3 && !roomMemory.roadsBuiltExtended) {
-            let extensions = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTENSION });
-            extensions.forEach(ext => this.buildPath(room, ext.pos, spawn.pos));
-            let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER });
-            towers.forEach(tower => this.buildPath(room, tower.pos, spawn.pos));
+            let extensions = cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTENSION); // Nutzt cached Strukturen
+            extensions.forEach(ext => this.buildPath(room, ext.pos, spawn.pos, cachedData));
+            let towers = cachedData.structures.filter(s => s.structureType === STRUCTURE_TOWER); // Nutzt cached Strukturen
+            towers.forEach(tower => this.buildPath(room, tower.pos, spawn.pos, cachedData));
             roomMemory.roadsBuiltExtended = true;
             logger.info('Built extended roads in ' + room.name);
         }
 
         if (room.controller.level >= 4 && !roomMemory.roadsToRemoteBuilt) {
-            let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+            let storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE); // Nutzt cached Strukturen
             if (storage && roomMemory.remoteRooms && roomMemory.remoteRooms.length > 0) {
                 roomMemory.remoteRooms.forEach(remoteRoomName => {
                     let remoteRoom = Game.rooms[remoteRoomName];
@@ -189,7 +215,7 @@ module.exports = {
                             filter: s => s.structureType === STRUCTURE_CONTAINER
                         });
                         remoteContainers.forEach(container => {
-                            this.buildPathAcrossRooms(room, storage.pos, container.pos, remoteRoomName);
+                            this.buildPathAcrossRooms(room, storage.pos, container.pos, remoteRoomName, cachedData);
                         });
                         logger.info(`Built roads from storage in ${room.name} to containers in ${remoteRoomName}`);
                     } else {
@@ -205,11 +231,11 @@ module.exports = {
         }
     },
 
-    buildRoadsToExtractors: function(room) {
+    buildRoadsToExtractors: function(room, cachedData) {
         let roomMemory = Memory.rooms[room.name];
         if (roomMemory.roadsToExtractorsBuilt) return;
 
-        let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+        let storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE); // Nutzt cached Strukturen
         if (!storage) {
             logger.warn(`No storage found in ${room.name}, cannot build roads to extractors`);
             return;
@@ -218,11 +244,9 @@ module.exports = {
         let builtRoads = false;
 
         // Straßen zu Extractoren im Hauptraum
-        let localExtractors = room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_EXTRACTOR
-        });
+        let localExtractors = cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTRACTOR); // Nutzt cached Strukturen
         localExtractors.forEach(extractor => {
-            this.buildPath(room, storage.pos, extractor.pos);
+            this.buildPath(room, storage.pos, extractor.pos, cachedData);
             logger.info(`Built road from storage to extractor at ${extractor.pos} in ${room.name}`);
             builtRoads = true;
         });
@@ -236,7 +260,7 @@ module.exports = {
                         filter: s => s.structureType === STRUCTURE_EXTRACTOR
                     });
                     remoteExtractors.forEach(extractor => {
-                        this.buildPathAcrossRooms(room, storage.pos, extractor.pos, remoteRoomName);
+                        this.buildPathAcrossRooms(room, storage.pos, extractor.pos, remoteRoomName, cachedData);
                         logger.info(`Built road from storage in ${room.name} to extractor at ${extractor.pos} in ${remoteRoomName}`);
                         builtRoads = true;
                     });
@@ -254,12 +278,12 @@ module.exports = {
         }
     },
 
-    buildTowers: function(room, spawn) {
-        let towers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
-        let towerSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_TOWER }).length;
+    buildTowers: function(room, spawn, cachedData) {
+        let towers = cachedData.structures.filter(s => s.structureType === STRUCTURE_TOWER).length; // Nutzt cached Strukturen
+        let towerSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_TOWER).length; // Nutzt cached Baustellen
         let maxTowers = room.controller.level >= 5 ? 2 : 1;
 
-        logger.info('Towers in ' + room.name + ': ' + towers + ' built, ' + towerSites + ' sites, max ' + maxTowers + ', energy available: ' + room.energyAvailable);
+        logger.info(`Towers in ${room.name}: ${towers} built, ${towerSites} sites, max ${maxTowers}, energy available: ${room.energyAvailable}`);
         if (towers + towerSites < maxTowers && room.energyAvailable >= 600) {
             const maxDistance = 5;
             let placed = false;
@@ -273,35 +297,35 @@ module.exports = {
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
                     if (distance >= 2 && distance <= maxDistance && x >= 0 && x < 50 && y >= 0 && y < 50) {
-                        if (this.canPlaceStructure(room, x, y)) {
+                        if (this.canPlaceStructure(room, x, y, cachedData)) {
                             room.createConstructionSite(x, y, STRUCTURE_TOWER);
-                            logger.info('Placed tower at ' + x + ',' + y + ' in ' + room.name);
+                            logger.info(`Placed tower at ${x},${y} in ${room.name}`);
                             placed = true;
                         } else {
-                            logger.warn('Position ' + x + ',' + y + ' blocked for tower in ' + room.name);
+                            logger.warn(`Position ${x},${y} blocked for tower in ${room.name}`);
                         }
                     }
                 }
             }
 
             if (!placed) {
-                logger.warn('No valid position found for new tower in ' + room.name);
+                logger.warn(`No valid position found for new tower in ${room.name}`);
             }
         } else {
-            logger.info('No new towers needed in ' + room.name + ' or insufficient energy/conditions not met');
+            logger.info(`No new towers needed in ${room.name} or insufficient energy/conditions not met`);
         }
     },
 
-    buildLinks: function(room) {
-        let links = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
-        let linkSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LINK }).length;
+    buildLinks: function(room, cachedData) {
+        let links = cachedData.structures.filter(s => s.structureType === STRUCTURE_LINK).length; // Nutzt cached Strukturen
+        let linkSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_LINK).length; // Nutzt cached Baustellen
         let maxLinks = room.controller.level >= 6 ? 3 : (room.controller.level >= 5 ? 2 : 0);
 
-        logger.info('Links in ' + room.name + ': ' + links + ' built, ' + linkSites + ' sites, max ' + maxLinks + ', energy available: ' + room.energyAvailable);
+        logger.info(`Links in ${room.name}: ${links} built, ${linkSites} sites, max ${maxLinks}, energy available: ${room.energyAvailable}`);
         if (links + linkSites < maxLinks && room.energyAvailable >= 300) {
             let placed = false;
 
-            let storage = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0];
+            let storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE); // Nutzt cached Strukturen
             if (links + linkSites === 0 && !placed && storage) {
                 const storagePos = storage.pos;
                 for (let dx = -1; dx <= 1 && !placed; dx++) {
@@ -309,19 +333,19 @@ module.exports = {
                         if (dx === 0 && dy === 0) continue;
                         let x = storagePos.x + dx;
                         let y = storagePos.y + dy;
-                        if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                        if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y, cachedData)) {
                             room.createConstructionSite(x, y, STRUCTURE_LINK);
-                            logger.info('Placed storage link (sender) at ' + x + ',' + y + ' in ' + room.name);
+                            logger.info(`Placed storage link (sender) at ${x},${y} in ${room.name}`);
                             placed = true;
                         } else {
-                            logger.warn('Position ' + x + ',' + y + ' blocked for storage link in ' + room.name);
+                            logger.warn(`Position ${x},${y} blocked for storage link in ${room.name}`);
                         }
                     }
                 }
             }
 
             if (links + linkSites === 1 && !placed) {
-                let controllerContainer = room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+                let controllerContainer = room.controller.pos.findInRange(cachedData.structures, 3, {
                     filter: s => s.structureType === STRUCTURE_CONTAINER
                 })[0];
                 if (controllerContainer) {
@@ -331,12 +355,12 @@ module.exports = {
                             if (dx === 0 && dy === 0) continue;
                             let x = containerPos.x + dx;
                             let y = containerPos.y + dy;
-                            if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                            if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y, cachedData)) {
                                 room.createConstructionSite(x, y, STRUCTURE_LINK);
-                                logger.info('Placed controller link (receiver) at ' + x + ',' + y + ' in ' + room.name);
+                                logger.info(`Placed controller link (receiver) at ${x},${y} in ${room.name}`);
                                 placed = true;
                             } else {
-                                logger.warn('Position ' + x + ',' + y + ' blocked for controller link in ' + room.name);
+                                logger.warn(`Position ${x},${y} blocked for controller link in ${room.name}`);
                             }
                         }
                     }
@@ -344,9 +368,9 @@ module.exports = {
             }
 
             if (links + linkSites === 2 && room.controller.level >= 6 && !placed) {
-                let sources = room.find(FIND_SOURCES);
+                let sources = cachedData.sources; // Nutzt cached Quellen
                 for (let source of sources) {
-                    let sourceContainer = source.pos.findInRange(FIND_STRUCTURES, 2, {
+                    let sourceContainer = source.pos.findInRange(cachedData.structures, 2, {
                         filter: s => s.structureType === STRUCTURE_CONTAINER
                     })[0];
                     if (sourceContainer) {
@@ -356,13 +380,13 @@ module.exports = {
                                 if (dx === 0 && dy === 0) continue;
                                 let x = containerPos.x + dx;
                                 let y = containerPos.y + dy;
-                                if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y)) {
+                                if (x >= 0 && x < 50 && y >= 0 && y < 50 && this.canPlaceStructure(room, x, y, cachedData)) {
                                     room.createConstructionSite(x, y, STRUCTURE_LINK);
-                                    logger.info('Placed source link at ' + x + ',' + y + ' near source ' + source.id + ' in ' + room.name);
+                                    logger.info(`Placed source link at ${x},${y} near source ${source.id} in ${room.name}`);
                                     placed = true;
                                     break;
                                 } else {
-                                    logger.warn('Position ' + x + ',' + y + ' blocked for source link in ' + room.name);
+                                    logger.warn(`Position ${x},${y} blocked for source link in ${room.name}`);
                                 }
                             }
                         }
@@ -372,28 +396,28 @@ module.exports = {
             }
 
             if (!placed) {
-                logger.warn('No valid position found for new link in ' + room.name);
+                logger.warn(`No valid position found for new link in ${room.name}`);
             }
         } else {
-            logger.info('No new links needed in ' + room.name + ' or insufficient energy/conditions not met');
+            logger.info(`No new links needed in ${room.name} or insufficient energy/conditions not met`);
         }
     },
 
-    buildDefenses: function(room, spawn) {
+    buildDefenses: function(room, spawn, cachedData) {
         let roomMemory = Memory.rooms[room.name];
         if (!roomMemory.defensesBuilt) {
             for (let x = spawn.pos.x - 5; x <= spawn.pos.x + 5; x++) {
                 for (let y = spawn.pos.y - 5; y <= spawn.pos.y + 5; y++) {
                     if (Math.abs(x - spawn.pos.x) === 5 || Math.abs(y - spawn.pos.y) === 5) {
-                        if (this.canPlaceStructure(room, x, y)) {
+                        if (this.canPlaceStructure(room, x, y, cachedData)) {
                             room.createConstructionSite(x, y, STRUCTURE_WALL);
                         }
                     }
                 }
             }
-            let containers = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER });
+            let containers = cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER); // Nutzt cached Strukturen
             containers.forEach(container => {
-                if (this.canPlaceStructure(room, container.pos.x, container.pos.y)) {
+                if (this.canPlaceStructure(room, container.pos.x, container.pos.y, cachedData)) {
                     room.createConstructionSite(container.pos.x, container.pos.y, STRUCTURE_RAMPART);
                 }
             });
@@ -402,7 +426,7 @@ module.exports = {
         }
     },
 
-    buildRemoteContainers: function(room) {
+    buildRemoteContainers: function(room, cachedData) {
         let roomMemory = Memory.rooms[room.name];
         if (!roomMemory.remoteContainersBuilt && room.controller.level >= 3) {
             let targetRoomName = roomMemory.remoteRooms[0];
@@ -410,10 +434,19 @@ module.exports = {
             if (targetRoom) {
                 let sources = targetRoom.find(FIND_SOURCES);
                 sources.forEach(source => {
-                    let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
-                    let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                    // Filtert gecachte Strukturen und Baustellen basierend auf der Nähe zu source.pos
+                    let nearbyContainers = cachedData.structures.filter(s => 
+                        s.structureType === STRUCTURE_CONTAINER && 
+                        this.getChebyshevDistance(s.pos, source.pos) <= 1
+                    );
+                    let nearbySites = cachedData.constructionSites.filter(s => 
+                        s.structureType === STRUCTURE_CONTAINER && 
+                        this.getChebyshevDistance(s.pos, source.pos) <= 1
+                    );
+                    let nearbyContainer = nearbyContainers[0]; // Erster passender Container
+                    let nearbySite = nearbySites[0]; // Erste passende Baustelle
                     if (!nearbyContainer && !nearbySite && room.energyAvailable >= 50) {
-                        this.placeContainerNear(targetRoom, source.pos);
+                        this.placeContainerNear(targetRoom, source.pos, cachedData);
                     }
                 });
                 roomMemory.remoteContainersBuilt = true;
@@ -427,8 +460,8 @@ module.exports = {
         if (Game.time % 10 === 0 && roomMemory.needsHarvesters && roomMemory.containers < roomMemory.sources && room.energyAvailable >= 50) {
             let sources = room.find(FIND_SOURCES);
             sources.forEach(source => {
-                let nearbyContainer = source.pos.findInRange(FIND_STRUCTURES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
-                let nearbySite = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                let nearbyContainer = source.pos.findInRange(room.find(FIND_STRUCTURES), 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
+                let nearbySite = source.pos.findInRange(room.find(FIND_CONSTRUCTION_SITES), 1, { filter: s => s.structureType === STRUCTURE_CONTAINER })[0];
                 if (!nearbyContainer && !nearbySite) {
                     this.placeContainerNear(room, source.pos);
                 }
@@ -436,33 +469,36 @@ module.exports = {
         }
     },
 
-    buildExtractor: function(room) {
-        let mineral = room.find(FIND_MINERALS)[0];
-        let extractor = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
-        let extractorSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+    buildExtractor: function(room, cachedData) {
+        // Suche nach Mineral mit FIND_MINERALS statt RESOURCE_MINERAL
+        let mineral = room.find(FIND_MINERALS)[0]; // Direktes Finden des Minerals im Raum
+        let extractor = cachedData.structures.find(s => s.structureType === STRUCTURE_EXTRACTOR); // Nutzt cached Strukturen
+        let extractorSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_EXTRACTOR).length; // Nutzt cached Baustellen
 
-        logger.info('Extractor in ' + room.name + ': ' + (extractor ? 1 : 0) + ' built, ' + extractorSites + ' sites');
-        if (!extractor && extractorSites === 0 && room.energyAvailable >= 200) {
+        logger.info(`Extractor in ${room.name}: ${extractor ? 1 : 0} built, ${extractorSites} sites`);
+        if (!extractor && extractorSites === 0 && room.energyAvailable >= 200 && mineral) {
             let result = room.createConstructionSite(mineral.pos, STRUCTURE_EXTRACTOR);
             if (result === OK) {
-                logger.info('Placed extractor at ' + mineral.pos + ' in ' + room.name);
+                logger.info(`Placed extractor at ${mineral.pos} in ${room.name}`);
             } else {
-                logger.warn('Failed to place extractor at ' + mineral.pos + ' in ' + room.name + ': ' + result);
+                logger.warn(`Failed to place extractor at ${mineral.pos} in ${room.name}: ${result}`);
             }
+        } else if (!mineral) {
+            logger.warn(`No mineral found in ${room.name} to place an extractor`);
         }
     },
 
-    buildLabs: function(room, spawn) {
-        let labs = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB }).length;
-        let labSites = room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_LAB }).length;
+    buildLabs: function(room, spawn, cachedData) {
+        let labs = cachedData.structures.filter(s => s.structureType === STRUCTURE_LAB).length; // Nutzt cached Strukturen
+        let labSites = cachedData.constructionSites.filter(s => s.structureType === STRUCTURE_LAB).length; // Nutzt cached Baustellen
         let maxLabs = room.controller.level >= 6 ? 3 : 0;
 
-        logger.info('Labs in ' + room.name + ': ' + labs + ' built, ' + labSites + ' sites, max ' + maxLabs);
+        logger.info(`Labs in ${room.name}: ${labs} built, ${labSites} sites, max ${maxLabs}`);
         if (labs + labSites < maxLabs && room.energyAvailable >= 300) {
             let placed = 0;
-            let storage = room.storage;
+            let storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE); // Nutzt cached Strukturen
             if (!storage) {
-                logger.warn('No storage found in ' + room.name + ', skipping lab placement');
+                logger.warn(`No storage found in ${room.name}, skipping lab placement`);
                 return;
             }
 
@@ -475,92 +511,82 @@ module.exports = {
 
             for (let pos of positions) {
                 if (labs + labSites + placed >= maxLabs) break;
-                if (pos.x >= 0 && pos.x < 50 && pos.y >= 0 && pos.y < 50 && this.canPlaceStructure(room, pos.x, pos.y)) {
+                if (pos.x >= 0 && pos.x < 50 && pos.y >= 0 && pos.y < 50 && this.canPlaceStructure(room, pos.x, pos.y, cachedData)) {
                     let result = room.createConstructionSite(pos.x, pos.y, STRUCTURE_LAB);
                     if (result === OK) {
-                        logger.info('Placed lab at ' + pos.x + ',' + pos.y + ' in ' + room.name);
+                        logger.info(`Placed lab at ${pos.x},${pos.y} in ${room.name}`);
                         placed++;
                     } else {
-                        logger.warn('Failed to place lab at ' + pos.x + ',' + pos.y + ' in ' + room.name + ': ' + result);
+                        logger.warn(`Failed to place lab at ${pos.x},${pos.y} in ${room.name}: ${result}`);
                     }
                 }
             }
 
             if (placed === 0) {
-                logger.warn('No valid positions found for new labs in ' + room.name);
+                logger.warn(`No valid positions found for new labs in ${room.name}`);
             }
         } else {
-            logger.info('No new labs needed in ' + room.name + ' or insufficient energy');
+            logger.info(`No new labs needed in ${room.name} or insufficient energy`);
         }
     },
 
-    buildRemoteExtractors: function(room) {
+    buildRemoteExtractors: function(room, cachedData) {
         let roomMemory = Memory.rooms[room.name];
         if (!roomMemory.remoteRooms || roomMemory.remoteRooms.length === 0) return;
 
-        let totalExtractors = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
+        let totalExtractors = cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTRACTOR).length; // Nutzt cached Strukturen
         roomMemory.remoteRooms.forEach(remoteRoomName => {
             let remoteRoom = Game.rooms[remoteRoomName];
-            if (remoteRoom) {
-                totalExtractors += remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
-            }
-        });
-
-        let maxExtractors = room.controller.level >= 7 ? 2 : 1; // 1 bei RCL 6, 2 bei RCL 7
-        if (totalExtractors >= maxExtractors) return;
-
-        roomMemory.remoteRooms.forEach(remoteRoomName => {
-            let remoteRoom = Game.rooms[remoteRoomName];
-            if (remoteRoom && room.energyAvailable >= 200 && totalExtractors < maxExtractors) {
+            if (remoteRoom && room.energyAvailable >= 200 && totalExtractors < (room.controller.level >= 7 ? 2 : 1)) {
                 let mineral = remoteRoom.find(FIND_MINERALS)[0];
                 let extractor = remoteRoom.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
                 let extractorSites = remoteRoom.find(FIND_CONSTRUCTION_SITES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length;
 
-                if (!extractor && extractorSites === 0) {
+                if (!extractor && extractorSites === 0 && mineral) {
                     let result = remoteRoom.createConstructionSite(mineral.pos, STRUCTURE_EXTRACTOR);
                     if (result === OK) {
-                        logger.info('Placed extractor at ' + mineral.pos + ' in ' + remoteRoomName);
+                        logger.info(`Placed extractor at ${mineral.pos} in ${remoteRoomName}`);
                         totalExtractors++;
                     } else {
-                        logger.warn('Failed to place extractor at ' + mineral.pos + ' in ' + remoteRoomName + ': ' + result);
+                        logger.warn(`Failed to place extractor at ${mineral.pos} in ${remoteRoomName}: ${result}`);
                     }
                 }
             }
         });
     },
 
-    canPlaceStructure: function(room, x, y) {
-        let terrain = room.lookForAt(LOOK_TERRAIN, x, y)[0];
-        let structures = room.lookForAt(LOOK_STRUCTURES, x, y);
-        let sites = room.lookForAt(LOOK_CONSTRUCTION_SITES, x, y);
-        return terrain !== 'wall' && !structures.length && !sites.length;
+    canPlaceStructure: function(room, x, y, cachedData) {
+        let terrain = room.lookForAt(LOOK_TERRAIN, x, y)[0]; // Terrain kann nicht gecacht werden, da es sich nicht ändert
+        let structures = cachedData ? cachedData.structures.filter(s => s.pos.x === x && s.pos.y === y).length : room.find(FIND_STRUCTURES, { filter: s => s.pos.x === x && s.pos.y === y }).length; // Nutzt cached Strukturen, Fallback auf find
+        let sites = cachedData ? cachedData.constructionSites.filter(s => s.pos.x === x && s.pos.y === y).length : room.find(FIND_CONSTRUCTION_SITES, { filter: s => s.pos.x === x && s.pos.y === y }).length; // Nutzt cached Baustellen, Fallback auf find
+        return terrain !== 'wall' && !structures && !sites;
     },
 
-    placeContainerNear: function(room, pos) {
+    placeContainerNear: function(room, pos, cachedData) {
         let positions = [
             { x: pos.x, y: pos.y + 1 }, { x: pos.x, y: pos.y - 1 },
             { x: pos.x - 1, y: pos.y }, { x: pos.x + 1, y: pos.y }
         ];
         for (let p of positions) {
-            if (this.canPlaceStructure(room, p.x, p.y)) {
+            if (this.canPlaceStructure(room, p.x, p.y, cachedData)) {
                 room.createConstructionSite(p.x, p.y, STRUCTURE_CONTAINER);
-                logger.info('Placed container at ' + p.x + ',' + p.y + ' in ' + room.name);
+                logger.info(`Placed container at ${p.x},${p.y} in ${room.name}`);
                 break;
             }
         }
     },
 
-    buildPath: function(room, fromPos, toPos) {
+    buildPath: function(room, fromPos, toPos, cachedData) {
         let path = room.findPath(fromPos, toPos, { ignoreCreeps: true, swampCost: 1 });
         path.forEach(step => {
-            if (room.lookForAt(LOOK_STRUCTURES, step.x, step.y).length === 0 &&
-                room.lookForAt(LOOK_CONSTRUCTION_SITES, step.x, step.y).length === 0) {
+            if (cachedData.structures.filter(s => s.pos.x === step.x && s.pos.y === step.y).length === 0 &&
+                cachedData.constructionSites.filter(s => s.pos.x === step.x && s.pos.y === step.y).length === 0) {
                 room.createConstructionSite(step.x, step.y, STRUCTURE_ROAD);
             }
         });
     },
 
-    buildPathAcrossRooms: function(homeRoom, fromPos, toPos, targetRoomName) {
+    buildPathAcrossRooms: function(homeRoom, fromPos, toPos, targetRoomName, cachedData) {
         let path = PathFinder.search(
             fromPos,
             { pos: toPos, range: 1 },
@@ -598,10 +624,17 @@ module.exports = {
 
         path.forEach(step => {
             let targetRoom = Game.rooms[step.roomName];
-            if (targetRoom && targetRoom.lookForAt(LOOK_STRUCTURES, step.x, step.y).length === 0 &&
-                targetRoom.lookForAt(LOOK_CONSTRUCTION_SITES, step.x, step.y).length === 0) {
+            if (targetRoom && cachedData.structures.filter(s => s.pos.x === step.x && s.pos.y === step.y).length === 0 &&
+                cachedData.constructionSites.filter(s => s.pos.x === step.x && s.pos.y === step.y).length === 0) {
                 targetRoom.createConstructionSite(step.x, step.y, STRUCTURE_ROAD);
             }
         });
+    },
+
+    // Hilfsfunktion zur Berechnung der Chebyshev-Distanz zwischen zwei Positionen
+    getChebyshevDistance: function(pos1, pos2) {
+        let dx = Math.abs(pos1.x - pos2.x);
+        let dy = Math.abs(pos1.y - pos2.y);
+        return Math.max(dx, dy); // Chebyshev-Distanz: maximale Achsenverschiebung
     }
 };

@@ -55,8 +55,8 @@ module.exports.loop = function () {
             // Verarbeite nur eigene Räume, um CPU zu sparen
             if (isMyRoom) {
                 spawnManager.manageSpawns(room); // Verwaltet Spawns im Raum mit cached Daten
-                structureBuilder.buildStructures(room); // Baut Strukturen im Raum (einmaliger Aufruf)
-                structureBuilder.buildControllerContainer(room); // Baut Container nahe dem Controller
+                structureBuilder.buildStructures(room, cachedData); // Übergebe cachedData an buildStructures
+                structureBuilder.buildControllerContainer(room, cachedData); // Übergebe cachedData an buildControllerContainer
                 roleLink.run(); // Führt Link-Logik für diesen Raum aus, um Redundanzen zu vermeiden
             }
             logger.info(`Room ${roomName} processed`); // Bestätigt Raumverarbeitung
