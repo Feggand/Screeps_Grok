@@ -129,7 +129,7 @@ module.exports = {
                 let remoteRoomName = remoteRooms[i];
                 let reserversInRoom = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.targetRoom === remoteRoomName);
                 let roomVisible = Game.rooms[remoteRoomName];
-                let needsReserver = !roomVisible || (roomVisible && roomVisible.controller && !roomVisible.controller.my && (!roomVisible.controller.reservation || roomVisible.controller.reservation.ticksToEnd < 2000));
+                let needsReserver = !roomVisible || (roomVisible && roomVisible.controller && !roomVisible.controller.my && (!roomVisible.controller.reservation || roomVisible.controller.reservation.ticksToEnd < 5000));
                 if (needsReserver && (reserversInRoom.length === 0 || (reserversInRoom.length === 1 && reserversInRoom[0].ticksToLive < 60))) {
                     spawnCreeps.spawn(spawn, 'reserver', remoteRoomName, room.name);
                     logger.info(`Spawning new reserver for ${remoteRoomName} in ${room.name}`);
