@@ -1,10 +1,12 @@
 // role.remoteHarvester.js
 // Logik für RemoteHarvester-Creeps, die in Remote-Räumen unbesetzte Quellen abbauen
+// Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren
 
 var logger = require('logger');
+var _ = require('lodash');
 
 var roleRemoteHarvester = {
-    run: function(creep, cachedData) {
+    run: function (creep, cachedData) {
         logger.info(`${creep.name}: Starting run function`);
 
         let targetRoom = creep.memory.targetRoom;
@@ -25,14 +27,19 @@ var roleRemoteHarvester = {
             return;
         }
 
-        const sources = room.find(FIND_SOURCES);
+        // Nutze gecachte Daten für Quellen
+        let sources = (cachedData && cachedData.sources) || room.find(FIND_SOURCES);
+        if (cachedData && !cachedData.sources) cachedData.sources = sources; // Cache Quellen
         logger.info(`${creep.name}: Found ${sources.length} sources in ${targetRoom}`);
+
         const assignedSources = _.map(_.filter(Game.creeps, c => c.memory.role === 'remoteHarvester' && c.memory.targetRoom === targetRoom && c.id !== creep.id), 'memory.sourceId');
-        const targetSource = sources.find(source => !assignedSources.includes(source.id));
+        let targetSource = sources.find(source => !assignedSources.includes(source.id));
 
         if (!targetSource) {
             logger.warn(`${creep.name}: No unassigned sources in ${targetRoom}, idling`);
-            const spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ?
+                cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) :
+                FIND_MY_SPAWNS);
             if (spawn) {
                 logger.info(`${creep.name}: Moving to spawn ${spawn.id} for idling`);
                 creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
@@ -45,11 +52,12 @@ var roleRemoteHarvester = {
             logger.info(`${creep.name}: Assigned to source ${targetSource.id} in ${targetRoom}`);
         }
 
-        // Container-Logik
+        // Container-Logik mit Caching
         if (!creep.memory.containerId) {
-            let containers = room.find(FIND_STRUCTURES, { 
-                filter: s => s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(targetSource, 2)
-            });
+            let containers = (cachedData && cachedData.structures) ?
+                cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(targetSource, 2)) :
+                room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(targetSource, 2) });
+            if (cachedData && !cachedData.structures) cachedData.structures = room.find(FIND_STRUCTURES); // Cache Strukturen, falls noch nicht vorhanden
             logger.info(`${creep.name}: Found ${containers.length} containers near source in ${targetRoom}`);
             let freeContainer = containers[0]; // Bevorzuge den ersten existierenden Container
             if (freeContainer) {
@@ -65,7 +73,7 @@ var roleRemoteHarvester = {
                 logger.info(`${creep.name}: Assigned to existing container ${freeContainer.id}`);
             } else if (room.controller && (room.controller.my || (room.controller.reservation && room.controller.reservation.username === creep.owner.username))) {
                 logger.info(`${creep.name}: Room reserved, attempting to build container`);
-                this.buildContainerNearSource(creep, targetSource);
+                this.buildContainerNearSource(creep, targetSource, cachedData);
                 return;
             } else {
                 logger.warn(`${creep.name}: Room ${targetRoom} not reserved, harvesting without container`);
@@ -129,10 +137,11 @@ var roleRemoteHarvester = {
         }
     },
 
-    buildContainerNearSource: function(creep, source) {
-        const site = source.pos.findInRange(FIND_CONSTRUCTION_SITES, 2, { 
-            filter: s => s.structureType === STRUCTURE_CONTAINER 
-        })[0];
+    buildContainerNearSource: function (creep, source, cachedData) {
+        // Nutze gecachte Baustellen, falls verfügbar
+        let sites = (cachedData && cachedData.constructionSites) || creep.room.find(FIND_CONSTRUCTION_SITES);
+        if (cachedData && !cachedData.constructionSites) cachedData.constructionSites = sites; // Cache Baustellen
+        const site = sites.find(s => s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(source, 2));
         if (!site && creep.store[RESOURCE_ENERGY] > 0) {
             const positions = [
                 { x: source.pos.x, y: source.pos.y + 1 },
@@ -147,7 +156,9 @@ var roleRemoteHarvester = {
             for (let pos of positions) {
                 if (pos.x >= 0 && pos.x < 50 && pos.y >= 0 && pos.y < 50) {
                     const terrain = creep.room.lookForAt(LOOK_TERRAIN, pos.x, pos.y)[0];
-                    const structures = creep.room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
+                    const structures = (cachedData && cachedData.structures) ?
+                        cachedData.structures.filter(s => s.pos.x === pos.x && s.pos.y === pos.y) :
+                        creep.room.lookForAt(LOOK_STRUCTURES, pos.x, pos.y);
                     if (terrain !== 'wall' && structures.length === 0) {
                         const result = creep.room.createConstructionSite(pos.x, pos.y, STRUCTURE_CONTAINER);
                         if (result === OK) {
