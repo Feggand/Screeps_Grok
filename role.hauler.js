@@ -5,7 +5,7 @@
 var taskManager = require('taskManager');
 var logger = require('logger');
 
-module.exports.run = function(creep, cachedData) {
+module.exports.run = function (creep, cachedData) {
     // Arbeitsstatus aktualisieren basierend auf Energie im Creep
     const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für niedrigere Prioritäten
     const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
@@ -20,8 +20,8 @@ module.exports.run = function(creep, cachedData) {
                 delete creep.memory.targetId;
             }
         }
-    } else if (creep.store.getFreeCapacity() === 0 || 
-               (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
+    } else if (creep.store.getFreeCapacity() === 0 ||
+        (creep.store[RESOURCE_ENERGY] >= haulerCapacity * minEnergyThreshold && creep.memory.working)) {
         if (!creep.memory.working) {
             creep.memory.working = true;
             logger.info(creep.name + ': Wechselt zu Liefern (voll oder über Schwellwert)');
@@ -41,15 +41,8 @@ module.exports.run = function(creep, cachedData) {
         }
     }
 
-    // Prüft, ob Türme Energie benötigen (nutzt cachedData)
-    const towersNeedingEnergy = (cachedData && cachedData.structures) ? 
-        cachedData.structures.some(s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75) :
-        creep.room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75
-        }).length > 0;
-
     // Prüft, ob ein Receiver-Link in der Nähe des Controllers existiert (nutzt cachedData)
-    const hasReceiverLink = (cachedData && cachedData.structures) ? 
+    const hasReceiverLink = (cachedData && cachedData.structures) ?
         cachedData.structures.some(s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0 && s.pos.getRangeTo(creep.room.controller) <= 5) :
         creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
             filter: s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0
@@ -61,7 +54,7 @@ module.exports.run = function(creep, cachedData) {
     if (creep.memory.task && target) {
         if (creep.memory.task === 'collect' && !creep.memory.working) {
             taskValid = (target instanceof Resource && target.amount > 0) ||
-                        (target.store && target.store[RESOURCE_ENERGY] > 0);
+                (target.store && target.store[RESOURCE_ENERGY] > 0);
         } else if (creep.memory.task === 'deliver' && creep.memory.working) {
             taskValid = target.store && target.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
         }
@@ -93,11 +86,11 @@ module.exports.run = function(creep, cachedData) {
             }
 
             // Priorität 1: Spawn (nutzt cachedData)
-            let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ? 
-                cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) : 
+            let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ?
+                cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
                 FIND_MY_SPAWNS, {
-                    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-                });
+                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+            });
             if (spawn) {
                 let spawnTask = deliverTasks.find(t => t.target === spawn.id);
                 if (spawnTask) {
@@ -107,7 +100,7 @@ module.exports.run = function(creep, cachedData) {
             }
 
             // Priorität 2: Extensions (nutzt cachedData)
-            let extensions = (cachedData && cachedData.structures) ? 
+            let extensions = (cachedData && cachedData.structures) ?
                 cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
                 creep.room.find(FIND_STRUCTURES, {
                     filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -159,7 +152,7 @@ module.exports.run = function(creep, cachedData) {
                 let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
 
                 // Prüfe Container-Energie und priorisiere Storage, wenn Container fast leer (nutzt cachedData)
-                let containers = (cachedData && cachedData.structures) ? 
+                let containers = (cachedData && cachedData.structures) ?
                     cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER) :
                     creep.room.find(FIND_STRUCTURES, {
                         filter: s => s.structureType === STRUCTURE_CONTAINER
@@ -315,8 +308,8 @@ module.exports.run = function(creep, cachedData) {
             }
         }
     } else if (creep.memory.task === 'idle') {
-        let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ? 
-            cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) : 
+        let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ?
+            cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) :
             FIND_MY_SPAWNS);
         if (spawn) {
             creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
