@@ -14,13 +14,40 @@ module.exports.run = function(creep, cachedData) {
         return;
     }
 
-    // Finde Mineral und Extractor im aktuellen Raum
-    mineral = creep.room.find(FIND_MINERALS)[0];
-    extractor = creep.room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
+    // Nutze gecachte Daten, falls verfügbar
+    if (cachedData) {
+        mineral = cachedData.minerals ? cachedData.minerals[0] : null;
+        extractor = cachedData.structures ? cachedData.structures.find(s => s.structureType === STRUCTURE_EXTRACTOR) : null;
+        storage = cachedData.structures ? cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE) : creep.room.storage;
+    }
+
+    // Finde Mineral, Extractor und Storage, wenn nicht gecacht oder nicht gefunden
+    if (!mineral) {
+        mineral = creep.room.find(FIND_MINERALS)[0];
+        if (cachedData && !cachedData.minerals) cachedData.minerals = [mineral]; // Cache Mineral
+    }
+    if (!extractor) {
+        extractor = creep.room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR })[0];
+        if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen, falls noch nicht vorhanden
+        else if (cachedData && cachedData.structures) cachedData.structures = cachedData.structures.concat(extractor); // Füge Extractor hinzu
+    }
+    if (!storage) {
+        storage = creep.room.storage;
+        if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen, falls noch nicht vorhanden
+        else if (cachedData && cachedData.structures) cachedData.structures = cachedData.structures.concat(storage); // Füge Storage hinzu
+    }
 
     if (!mineral || !extractor || !storage) {
         logger.warn(creep.name + ': Missing mineral, extractor, or storage in ' + creep.room.name);
-        creep.moveTo(storage, { visualizePathStyle: { stroke: '#ffffff' } });
+        creep.memory.task = 'idle'; // Wechsle in idle-Modus
+        creep.memory.targetId = null;
+        let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ? 
+            cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) : 
+            FIND_MY_SPAWNS);
+        if (spawn) {
+            creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+            logger.info(creep.name + ': Moving to spawn due to missing resources');
+        }
         return;
     }
 
