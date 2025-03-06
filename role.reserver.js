@@ -4,7 +4,7 @@
 var logger = require('logger');
 
 var roleReserver = {
-    run: function(creep) {
+    run: function(creep, cachedData) {
         logger.info(`${creep.name}: Starting run function`);
 
         let targetRoom = creep.memory.targetRoom;

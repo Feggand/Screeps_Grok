@@ -1,7 +1,7 @@
 // role.mineralHarvester.js
 var logger = require('logger');
 
-module.exports.run = function(creep) {
+module.exports.run = function(creep, cachedData) {
     let targetRoom = creep.memory.targetRoom;
     let mineral = null;
     let extractor = null;

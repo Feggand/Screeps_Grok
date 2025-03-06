@@ -3,7 +3,7 @@
 
 var logger = require('logger'); // Importiert Logging-Modul
 
-module.exports.run = function (creep) {
+module.exports.run = function (creep, cachedData) {
     let targetRoom = creep.memory.targetRoom; // Zielraum aus Speicher
     if (!targetRoom || typeof targetRoom !== 'string') {
         logger.warn(creep.name + ': Invalid or undefined targetRoom, using first remote room from home');

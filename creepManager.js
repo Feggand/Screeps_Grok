@@ -1,12 +1,41 @@
 // creepManager.js
-// Dieses Modul verwaltet die Creeps und führt ihre Rollenlogik aus.
+// Modul zur Verwaltung und Ausführung der Creep-Logik
+// Verantwortlich für die Koordination aller Creeps basierend auf ihren Rollen
+// Implementiert ein Caching-System, um CPU-Nutzung zu optimieren, und behält die bestehende Rollenbestimmung bei
 
-var logger = require('logger'); // Importiert das Logger-Modul für Debugging und Protokollierung
+var logger = require('logger'); // Importiert das Logging-Modul für detaillierte Protokollierung
+var _ = require('lodash'); // Importiert Lodash für Array-Funktionen wie _.some und _.filter
+var roleHarvester = require('role.harvester'); // Importiert die Logik für Harvester-Creeps
+var roleHauler = require('role.hauler'); // Importiert die Logik für Hauler-Creeps
+var roleWorker = require('role.worker'); // Importiert die Logik für Worker-Creeps
+var roleRemoteHarvester = require('role.remoteHarvester'); // Importiert die Logik für Remote-Harvester
+var roleRemoteHauler = require('role.remoteHauler'); // Importiert die Logik für Remote-Hauler
+var roleRemoteWorker = require('role.remoteWorker'); // Importiert die Logik für Remote-Worker
+var roleReserver = require('role.reserver'); // Importiert die Logik für Reservier-Creeps
+var roleMineralHarvester = require('role.mineralHarvester'); // Importiert die Logik für Mineral-Harvester
+var roleScout = require('role.scout'); // Importiert die Logik für Scout-Creeps (falls definiert)
 
 module.exports = {
     // Hauptfunktion, die alle Creeps durchläuft und ihre Rollen ausführt
+    // Nutzt ein Caching-System, um wiederholte room.find()-Aufrufe zu minimieren
     runCreeps: function() {
-        // Iteriert über alle Creeps im Spiel
+        let cpuStart = Game.cpu.getUsed(); // Misst die CPU-Nutzung am Anfang der Creep-Verarbeitung
+
+        // Cached Daten für alle Räume einmalig abrufen, um CPU zu sparen
+        let cachedRooms = {};
+        for (let roomName in Game.rooms) {
+            let room = Game.rooms[roomName];
+            cachedRooms[roomName] = {
+                structures: room.find(FIND_STRUCTURES), // Cached Strukturen im Raum
+                sources: room.find(FIND_SOURCES), // Cached Quellen im Raum
+                containers: room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_CONTAINER }), // Cached Container
+                storage: room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_STORAGE })[0], // Cached Storage (erstes Element)
+                lastUpdate: Game.time // Zeitstempel der letzten Aktualisierung
+            };
+            logger.info(`Cached data initialized for room ${roomName} at tick ${Game.time}`); // Ersetze debug durch info
+        }
+
+        // Durchlaufe alle Creeps und führe ihre Rollen aus
         for (let name in Game.creeps) {
             let creep = Game.creeps[name]; // Zugriff auf das Creep-Objekt
             let role = creep.memory.role; // Holt die Rolle aus dem Creep-Speicher
@@ -17,6 +46,7 @@ module.exports = {
                 // Versucht, die Rolle basierend auf dem Körper zu bestimmen
                 if (this.determineRole(creep)) {
                     role = creep.memory.role; // Aktualisiert die Rolle, wenn erfolgreich bestimmt
+                    logger.info(`Determined role ${role} for creep ${name} based on body`);
                 } else {
                     // Fallback-Rolle zuweisen, wenn Bestimmung fehlschlägt
                     creep.memory.role = this.getFallbackRole(creep);
@@ -27,16 +57,22 @@ module.exports = {
 
             try {
                 // Lädt das Modul der spezifischen Rolle dynamisch und führt es aus
+                // Nutzt gecachte Daten basierend auf dem Heimraum des Creeps oder dem aktuellen Raum
+                let cachedData = cachedRooms[creep.memory.home || creep.room.name] || {};
                 let roleModule = require('role.' + role);
-                roleModule.run(creep); // Führt die run-Funktion des Rollenmoduls für den Creep aus
+                roleModule.run(creep, cachedData); // Führt die run-Funktion des Rollenmoduls mit gecachten Daten aus
             } catch (error) {
                 // Protokolliert Fehler, falls das Rollenmodul nicht geladen oder ausgeführt werden kann
                 logger.error(`Error running role ${role} for creep ${name}: ${error.message}`);
             }
         }
+
+        let cpuUsed = Game.cpu.getUsed() - cpuStart; // Berechnet die genutzte CPU für Creeps
+        logger.info(`Creeps run, CPU usage: ${cpuUsed.toFixed(2)}ms`); // Protokolliert die Creep-CPU-Nutzung
     },
 
     // Funktion zur Bestimmung der Rolle eines Creeps basierend auf seinen Körperteilen
+    // Analysiert die Körperteile und weist eine Rolle basierend auf deren Zusammensetzung zu
     determineRole: function(creep) {
         let body = creep.body; // Zugriff auf die Körperteile des Creeps
         let hasWork = _.some(body, part => part.type === WORK); // Prüft auf WORK-Teile (Arbeiten)
@@ -69,6 +105,7 @@ module.exports = {
     },
 
     // Fallback-Funktion, um eine Standardrolle zuzuweisen, wenn die Bestimmung fehlschlägt
+    // Aktuell wird 'worker' als Standardrolle festgelegt
     getFallbackRole: function(creep) {
         return 'worker'; // Standard-Fallback-Rolle ist 'worker'
         // Hinweis: Kann später dynamischer gestaltet werden, z. B. basierend auf Raumbedarf

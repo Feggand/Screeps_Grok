@@ -5,7 +5,7 @@ var resourceManager = require('resourceManager');
 var taskManager = require('taskManager');
 var logger = require('logger');
 
-module.exports.run = function(creep) {
+module.exports.run = function(creep, cachedData) {
     // Aktualisiert den Arbeitsstatus basierend auf der Energie im Creep
     if (creep.store[RESOURCE_ENERGY] === 0) {
         if (creep.memory.working) {

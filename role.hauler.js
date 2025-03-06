@@ -1,10 +1,11 @@
 // role.hauler.js
 // Logik für Hauler-Creeps, die Energie transportieren
+// Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren
 
 var taskManager = require('taskManager');
 var logger = require('logger');
 
-module.exports.run = function(creep) {
+module.exports.run = function(creep, cachedData) {
     // Arbeitsstatus aktualisieren basierend auf Energie im Creep
     const minEnergyThreshold = 0.8; // Mindestens 80% des Laderaums für niedrigere Prioritäten
     const haulerCapacity = creep.store.getCapacity(RESOURCE_ENERGY);
@@ -40,19 +41,23 @@ module.exports.run = function(creep) {
         }
     }
 
-    // Prüft, ob Türme Energie benötigen
-    const towersNeedingEnergy = creep.room.find(FIND_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75
-    }).length > 0;
+    // Prüft, ob Türme Energie benötigen (nutzt cachedData)
+    const towersNeedingEnergy = (cachedData && cachedData.structures) ? 
+        cachedData.structures.some(s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75) :
+        creep.room.find(FIND_STRUCTURES, {
+            filter: s => s.structureType === STRUCTURE_TOWER && s.store[RESOURCE_ENERGY] < s.store.getCapacity(RESOURCE_ENERGY) * 0.75
+        }).length > 0;
 
-    // Prüft, ob ein Receiver-Link in der Nähe des Controllers existiert
-    const hasReceiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
-        filter: s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0
-    }).length > 0;
+    // Prüft, ob ein Receiver-Link in der Nähe des Controllers existiert (nutzt cachedData)
+    const hasReceiverLink = (cachedData && cachedData.structures) ? 
+        cachedData.structures.some(s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0 && s.pos.getRangeTo(creep.room.controller) <= 5) :
+        creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
+            filter: s => s.structureType === STRUCTURE_LINK && s.store.getCapacity(RESOURCE_ENERGY) > 0
+        }).length > 0;
 
     // Prüft, ob die gespeicherte Aufgabe noch gültig ist
     let taskValid = false;
-    let target = Game.getObjectById(creep.memory.targetId);
+    let target = creep.memory.targetId ? Game.getObjectById(creep.memory.targetId) : null;
     if (creep.memory.task && target) {
         if (creep.memory.task === 'collect' && !creep.memory.working) {
             taskValid = (target instanceof Resource && target.amount > 0) ||
@@ -68,7 +73,7 @@ module.exports.run = function(creep) {
 
     // Wenn die Aufgabe ungültig ist oder nicht zum Status passt, neue zuweisen
     if (!taskValid || (creep.memory.working && creep.memory.task !== 'deliver') || (!creep.memory.working && creep.memory.task !== 'collect')) {
-        let tasks = taskManager.getHaulerTasks(creep.room);
+        let tasks = taskManager.getHaulerTasks(creep.room, cachedData); // Übergibt cachedData an taskManager
         if (!Array.isArray(tasks)) {
             logger.error(creep.name + ': getHaulerTasks returned invalid data: ' + JSON.stringify(tasks));
             creep.memory.task = 'idle';
@@ -87,10 +92,12 @@ module.exports.run = function(creep) {
                 });
             }
 
-            // Priorität 1: Spawn
-            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
-                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            });
+            // Priorität 1: Spawn (nutzt cachedData)
+            let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ? 
+                cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) : 
+                FIND_MY_SPAWNS, {
+                    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                });
             if (spawn) {
                 let spawnTask = deliverTasks.find(t => t.target === spawn.id);
                 if (spawnTask) {
@@ -99,10 +106,12 @@ module.exports.run = function(creep) {
                 }
             }
 
-            // Priorität 2: Extensions
-            let extensions = creep.room.find(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            });
+            // Priorität 2: Extensions (nutzt cachedData)
+            let extensions = (cachedData && cachedData.structures) ? 
+                cachedData.structures.filter(s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
+                creep.room.find(FIND_STRUCTURES, {
+                    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                });
             if (extensions.length > 0) {
                 let closestExtension = creep.pos.findClosestByPath(extensions);
                 let extensionTask = deliverTasks.find(t => t.target === closestExtension.id);
@@ -149,10 +158,13 @@ module.exports.run = function(creep) {
             if (collectTasks.length > 0) {
                 let assignedHaulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.task === 'collect' && c.memory.targetId);
 
-                // Prüfe Container-Energie und priorisiere Storage, wenn Container fast leer
-                let totalContainerEnergy = creep.room.find(FIND_STRUCTURES, {
-                    filter: s => s.structureType === STRUCTURE_CONTAINER
-                }).reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
+                // Prüfe Container-Energie und priorisiere Storage, wenn Container fast leer (nutzt cachedData)
+                let containers = (cachedData && cachedData.structures) ? 
+                    cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER) :
+                    creep.room.find(FIND_STRUCTURES, {
+                        filter: s => s.structureType === STRUCTURE_CONTAINER
+                    });
+                let totalContainerEnergy = containers.reduce((sum, c) => sum + c.store[RESOURCE_ENERGY], 0);
                 if (totalContainerEnergy < haulerCapacity) {
                     let storageTask = collectTasks.find(t => {
                         let target = Game.getObjectById(t.target);
@@ -164,7 +176,7 @@ module.exports.run = function(creep) {
                     }
                 }
 
-                // Priorität 1: Abgeworfene Ressourcen und Tombstones
+                // Priorität 1: Abgeworfene Ressourcen und Tombstones (nutzt keine cachedData, da dynamisch)
                 let lootTasks = collectTasks.filter(t => {
                     let target = Game.getObjectById(t.target);
                     return target && (target instanceof Resource || target instanceof Tombstone);
@@ -192,7 +204,7 @@ module.exports.run = function(creep) {
                     }
                 }
 
-                // Priorität 2: Container mit ausreichend Energie
+                // Priorität 2: Container mit ausreichend Energie (nutzt cachedData)
                 let viableContainerTasks = collectTasks.filter(t => {
                     let target = Game.getObjectById(t.target);
                     return target && target.structureType === STRUCTURE_CONTAINER && target.store[RESOURCE_ENERGY] >= minContainerEnergy;
@@ -243,7 +255,6 @@ module.exports.run = function(creep) {
 
     // Führt die gespeicherte Aufgabe aus
     if (creep.memory.task === 'deliver' && creep.memory.working) {
-        let target = Game.getObjectById(creep.memory.targetId);
         if (target && target.store) {
             if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                 creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
@@ -265,7 +276,6 @@ module.exports.run = function(creep) {
             delete creep.memory.targetId;
         }
     } else if (creep.memory.task === 'collect' && !creep.memory.working) {
-        let target = Game.getObjectById(creep.memory.targetId);
         if (!target) {
             logger.info(creep.name + ': Collect-Ziel ungültig, Aufgabe zurückgesetzt');
             delete creep.memory.task;
@@ -305,7 +315,9 @@ module.exports.run = function(creep) {
             }
         }
     } else if (creep.memory.task === 'idle') {
-        let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+        let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ? 
+            cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) : 
+            FIND_MY_SPAWNS);
         if (spawn) {
             creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
             logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn ' + spawn.id);

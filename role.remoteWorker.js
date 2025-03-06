@@ -4,7 +4,7 @@
 var logger = require('logger');
 
 var roleRemoteWorker = {
-    run: function(creep) {
+    run: function(creep, cachedData) {
         logger.info(`${creep.name}: Starting run function`);
 
         const homeRoom = creep.memory.homeRoom || 'W6N1';

@@ -4,7 +4,7 @@
 var logger = require('logger');
 
 var roleRemoteHauler = {
-    run: function(creep) {
+    run: function(creep, cachedData) {
         logger.info(`${creep.name}: Starting run function`);
 
         // Zustandswechsel basierend auf Energie
