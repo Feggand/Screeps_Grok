@@ -1,5 +1,6 @@
 // role.scout.js
 // Logik für Scout-Creeps, die Remote-Räume erkunden
+// Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren und Konsistenz zu wahren
 
 var logger = require('logger'); // Importiert Logging-Modul
 

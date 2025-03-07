@@ -1,5 +1,6 @@
 // role.worker.js
 // Logik für Worker-Creeps, die bauen, reparieren und upgraden
+// Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren
 
 var resourceManager = require('resourceManager');
 var taskManager = require('taskManager');
@@ -34,11 +35,22 @@ module.exports.run = function(creep, cachedData) {
         let haulers = _.filter(Game.creeps, c => c.memory.role === 'hauler' && c.memory.homeRoom === creep.room.name).length;
         if (haulers === 0) {
             // Notfall: Worker transportiert Energie zu Spawn/Extensions
-            let target = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
-                filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            }) || creep.pos.findClosestByPath(FIND_STRUCTURES, {
-                filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
-            });
+            let target = null;
+            if (cachedData && cachedData.structures) {
+                target = creep.pos.findClosestByPath(cachedData.structures, {
+                    filter: s => s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                }) || creep.pos.findClosestByPath(cachedData.structures, {
+                    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                });
+            } else {
+                target = creep.pos.findClosestByPath(FIND_MY_SPAWNS, {
+                    filter: s => s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                }) || creep.pos.findClosestByPath(FIND_STRUCTURES, {
+                    filter: s => s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                });
+                if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen
+            }
+
             if (target) {
                 if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
@@ -68,7 +80,7 @@ module.exports.run = function(creep, cachedData) {
 
         // Wenn die Aufgabe ungültig ist oder keine Aufgabe existiert, neue zuweisen
         if (!taskValid || !creep.memory.task) {
-            let tasks = taskManager.getWorkerTasks(creep.room);
+            let tasks = taskManager.getWorkerTasks(creep.room, cachedData); // Übergibt cachedData an taskManager
             taskManager.assignTask(creep, tasks);
         }
 
@@ -119,7 +131,15 @@ module.exports.run = function(creep, cachedData) {
                 delete creep.memory.targetId;
             }
         } else if (creep.memory.task === 'idle') {
-            let spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+            let spawn = null;
+            if (cachedData && cachedData.structures) {
+                spawn = creep.pos.findClosestByPath(cachedData.structures, {
+                    filter: s => s.structureType === STRUCTURE_SPAWN
+                });
+            } else {
+                spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
+                if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen
+            }
             if (spawn) {
                 creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
                 logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn');
@@ -127,15 +147,30 @@ module.exports.run = function(creep, cachedData) {
         }
     } else { // Energiesammelmodus
         // Bevorzugte Energiequellen: Receiver-Link, Controller-Container, Storage
-        let controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
-            filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
-        })[0];
-        let storage = creep.room.find(FIND_STRUCTURES, {
-            filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
-        })[0];
-        let receiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
-            filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
-        })[0];
+        let controllerContainer = null;
+        let storage = null;
+        let receiverLink = null;
+
+        if (cachedData && cachedData.structures) {
+            controllerContainer = creep.room.controller.pos.findInRange(cachedData.structures, 3, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+            storage = cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0);
+            receiverLink = creep.room.controller.pos.findInRange(cachedData.structures, 5, {
+                filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+        } else {
+            controllerContainer = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+            storage = creep.room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+            receiverLink = creep.room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
+                filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+            if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen
+        }
 
         let energySource = null;
         if (receiverLink) {
@@ -161,7 +196,7 @@ module.exports.run = function(creep, cachedData) {
             logger.info(creep.name + ': Keine direkte Energiequelle verfügbar, sammelt via resourceManager');
             resourceManager.collectEnergy(creep, homeRoom);
             if (creep.store[RESOURCE_ENERGY] > 0) {
-                let tasks = taskManager.getWorkerTasks(creep.room);
+                let tasks = taskManager.getWorkerTasks(creep.room, cachedData); // Übergibt cachedData an taskManager
                 taskManager.assignTask(creep, tasks);
             }
         }

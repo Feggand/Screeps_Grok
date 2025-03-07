@@ -41,9 +41,9 @@ var taskManager = {
         // Bau von Baustellen
         let constructionSites = (cachedData && cachedData.constructionSites) || room.find(FIND_CONSTRUCTION_SITES); // Nutzt cached constructionSites
         constructionSites.forEach(site => {
-            let priority = 10; // Standard-Priorität für Baustellen
+            let priority = 15; // Standard-Priorität für Baustellen
             if (site.structureType === STRUCTURE_CONTAINER && site.pos.getRangeTo(room.controller) <= 3) { // Container nahe Controller
-                priority = 14; // Höchste Priorität
+                priority = 20; // Höchste Priorität
             }
             tasks.push({
                 type: 'construct', // Aufgabentyp: Bau
