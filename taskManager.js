@@ -159,7 +159,7 @@ var taskManager = {
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: resource.id, // Ziel-ID
-                priority: 9 // Hohe Priorität für Loot
+                priority: 5 // Hohe Priorität für Loot
             });
         });
 
@@ -171,7 +171,7 @@ var taskManager = {
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: tombstone.id, // Ziel-ID
-                priority: 9 // Hohe Priorität für Loot
+                priority: 5 // Hohe Priorität für Loot
             });
         });
 
