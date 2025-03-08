@@ -1,7 +1,7 @@
 // role.worker.js
 // Logik für Worker-Creeps, die bauen, reparieren und upgraden
 // Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren
-// Energiesammeln läuft nun komplett über den Task-Manager
+// Energiesammeln läuft nun komplett über den Task-Manager mit stärker gewichteten Entfernungsbasierten Prioritäten
 
 var taskManager = require('taskManager');
 var logger = require('logger');
@@ -159,7 +159,7 @@ module.exports.run = function(creep, cachedData) {
 
         // Wenn die Aufgabe ungültig ist oder keine Aufgabe existiert, neue zuweisen
         if (!taskValid || creep.memory.task !== 'collect') {
-            let tasks = taskManager.getWorkerCollectTasks(creep.room, cachedData); // Holt Sammelaufgaben vom Task-Manager
+            let tasks = taskManager.getWorkerCollectTasks(creep, cachedData); // Holt Sammelaufgaben vom Task-Manager mit Entfernungsberechnung
             if (tasks.length > 0) {
                 taskManager.assignTask(creep, tasks);
             } else {

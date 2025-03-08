@@ -314,8 +314,10 @@ var taskManager = {
     },
 
     // Funktion: Erstellt eine Liste von Sammelaufgaben für Worker-Creeps (Energiesammelmodus)
-    getWorkerCollectTasks: function(room, cachedData) {
+    // Priorität wird basierend auf Entfernung zum Creep berechnet, Entfernung stärker gewichtet
+    getWorkerCollectTasks: function(creep, cachedData) {
         let tasks = []; // Liste der Aufgaben
+        let room = creep.room;
 
         // Priorität 1: Receiver-Link (nahe Controller)
         let receiverLink = (cachedData && cachedData.structures) ?
@@ -324,10 +326,11 @@ var taskManager = {
                 filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
             })[0];
         if (receiverLink) {
+            let distance = creep.pos.getRangeTo(receiverLink);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: receiverLink.id, // Ziel-ID
-                priority: 10 // Hohe Priorität
+                priority: 10 - (distance / 5) // Basispriorität 10, Entfernung stärker gewichtet (Teiler 5)
             });
         }
 
@@ -338,10 +341,11 @@ var taskManager = {
                 filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
             })[0];
         if (controllerContainer) {
+            let distance = creep.pos.getRangeTo(controllerContainer);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: controllerContainer.id, // Ziel-ID
-                priority: 9 // Hohe Priorität
+                priority: 9 - (distance / 5) // Basispriorität 9, Entfernung stärker gewichtet
             });
         }
 
@@ -352,10 +356,11 @@ var taskManager = {
                 filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
             })[0];
         if (storage) {
+            let distance = creep.pos.getRangeTo(storage);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: storage.id, // Ziel-ID
-                priority: 8 // Mittlere Priorität
+                priority: 8 - (distance / 5) // Basispriorität 8, Entfernung stärker gewichtet
             });
         }
 
@@ -366,10 +371,11 @@ var taskManager = {
                 filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0 && s.pos.getRangeTo(room.controller) > 3
             });
         otherContainers.forEach(container => {
+            let distance = creep.pos.getRangeTo(container);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: container.id, // Ziel-ID
-                priority: 7 // Niedrigere Priorität
+                priority: 7 - (distance / 5) // Basispriorität 7, Entfernung stärker gewichtet
             });
         });
 
@@ -378,10 +384,11 @@ var taskManager = {
             filter: r => r.resourceType === RESOURCE_ENERGY
         });
         droppedEnergy.forEach(resource => {
+            let distance = creep.pos.getRangeTo(resource);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: resource.id, // Ziel-ID
-                priority: 6 // Niedrige Priorität
+                priority: 6 - (distance / 5) // Basispriorität 6, Entfernung stärker gewichtet
             });
         });
 
@@ -390,10 +397,11 @@ var taskManager = {
             filter: t => t.store[RESOURCE_ENERGY] > 0
         });
         tombstones.forEach(tombstone => {
+            let distance = creep.pos.getRangeTo(tombstone);
             tasks.push({
                 type: 'collect', // Aufgabentyp: Sammeln
                 target: tombstone.id, // Ziel-ID
-                priority: 5 // Niedrige Priorität
+                priority: 5 - (distance / 5) // Basispriorität 5, Entfernung stärker gewichtet
             });
         });
 
