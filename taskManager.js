@@ -6,7 +6,7 @@ var logger = require('logger'); // Importiert Logging-Modul für Protokollierung
 var _ = require('lodash'); // Importiert Lodash für Array-Funktionen
 
 var taskManager = {
-    // Funktion: Erstellt eine Liste von Aufgaben für Worker-Creeps
+    // Funktion: Erstellt eine Liste von Aufgaben für Worker-Creeps (Arbeitsmodus)
     getWorkerTasks: function(room, cachedData) {
         let tasks = []; // Liste der Aufgaben
 
@@ -310,6 +310,95 @@ var taskManager = {
 
         tasks.sort((a, b) => b.priority - a.priority); // Sortiert Aufgaben nach absteigender Priorität
         logger.info('Tower tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
+        return tasks; // Gibt sortierte Aufgaben zurück
+    },
+
+    // Funktion: Erstellt eine Liste von Sammelaufgaben für Worker-Creeps (Energiesammelmodus)
+    getWorkerCollectTasks: function(room, cachedData) {
+        let tasks = []; // Liste der Aufgaben
+
+        // Priorität 1: Receiver-Link (nahe Controller)
+        let receiverLink = (cachedData && cachedData.structures) ?
+            cachedData.structures.find(s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0 && s.pos.getRangeTo(room.controller) <= 5) :
+            room.controller.pos.findInRange(FIND_STRUCTURES, 5, {
+                filter: s => s.structureType === STRUCTURE_LINK && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+        if (receiverLink) {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: receiverLink.id, // Ziel-ID
+                priority: 10 // Hohe Priorität
+            });
+        }
+
+        // Priorität 2: Controller-Container
+        let controllerContainer = (cachedData && cachedData.structures) ?
+            cachedData.structures.find(s => s.structureType === STRUCTURE_CONTAINER && s.pos.getRangeTo(room.controller) <= 3 && s.store[RESOURCE_ENERGY] > 0) :
+            room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+        if (controllerContainer) {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: controllerContainer.id, // Ziel-ID
+                priority: 9 // Hohe Priorität
+            });
+        }
+
+        // Priorität 3: Storage
+        let storage = (cachedData && cachedData.structures) ?
+            cachedData.structures.find(s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0) :
+            room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_STORAGE && s.store[RESOURCE_ENERGY] > 0
+            })[0];
+        if (storage) {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: storage.id, // Ziel-ID
+                priority: 8 // Mittlere Priorität
+            });
+        }
+
+        // Priorität 4: Andere Container (außerhalb Controller-Bereich)
+        let otherContainers = (cachedData && cachedData.structures) ?
+            cachedData.structures.filter(s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0 && s.pos.getRangeTo(room.controller) > 3) :
+            room.find(FIND_STRUCTURES, {
+                filter: s => s.structureType === STRUCTURE_CONTAINER && s.store[RESOURCE_ENERGY] > 0 && s.pos.getRangeTo(room.controller) > 3
+            });
+        otherContainers.forEach(container => {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: container.id, // Ziel-ID
+                priority: 7 // Niedrigere Priorität
+            });
+        });
+
+        // Priorität 5: Abgeworfene Ressourcen
+        let droppedEnergy = room.find(FIND_DROPPED_RESOURCES, {
+            filter: r => r.resourceType === RESOURCE_ENERGY
+        });
+        droppedEnergy.forEach(resource => {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: resource.id, // Ziel-ID
+                priority: 6 // Niedrige Priorität
+            });
+        });
+
+        // Priorität 6: Tombstones
+        let tombstones = room.find(FIND_TOMBSTONES, {
+            filter: t => t.store[RESOURCE_ENERGY] > 0
+        });
+        tombstones.forEach(tombstone => {
+            tasks.push({
+                type: 'collect', // Aufgabentyp: Sammeln
+                target: tombstone.id, // Ziel-ID
+                priority: 5 // Niedrige Priorität
+            });
+        });
+
+        tasks.sort((a, b) => b.priority - a.priority); // Sortiert Aufgaben nach absteigender Priorität
+        logger.info('Worker collect tasks for ' + room.name + ': ' + JSON.stringify(tasks.map(t => ({ type: t.type, target: t.target, priority: t.priority }))));
         return tasks; // Gibt sortierte Aufgaben zurück
     },
 

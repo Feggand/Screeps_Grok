@@ -5,15 +5,6 @@
 
 var logger = require('logger'); // Importiert das Logging-Modul für detaillierte Protokollierung
 var _ = require('lodash'); // Importiert Lodash für Array-Funktionen wie _.some und _.filter
-var roleHarvester = require('role.harvester'); // Importiert die Logik für Harvester-Creeps
-var roleHauler = require('role.hauler'); // Importiert die Logik für Hauler-Creeps
-var roleWorker = require('role.worker'); // Importiert die Logik für Worker-Creeps
-var roleRemoteHarvester = require('role.remoteHarvester'); // Importiert die Logik für Remote-Harvester
-var roleRemoteHauler = require('role.remoteHauler'); // Importiert die Logik für Remote-Hauler
-var roleRemoteWorker = require('role.remoteWorker'); // Importiert die Logik für Remote-Worker
-var roleReserver = require('role.reserver'); // Importiert die Logik für Reservier-Creeps
-var roleMineralHarvester = require('role.mineralHarvester'); // Importiert die Logik für Mineral-Harvester
-var roleScout = require('role.scout'); // Importiert die Logik für Scout-Creeps (falls definiert)
 
 module.exports = {
     // Hauptfunktion, die alle Creeps durchläuft und ihre Rollen ausführt
