@@ -3,7 +3,7 @@ var spawnCreeps = require('spawnCreeps'); // Importiert das Modul zum Spawnen vo
 var logger = require('logger'); // Importiert das Logging-Modul
 
 module.exports = {
-    manageSpawns: function(room) {
+    manageSpawns: function (room) {
         // Verwaltet das Spawnen von Creeps im übergebenen Raum
         let roomMemory = Memory.rooms[room.name] || {}; // Zugriff auf den Speicher des Raums, falls nicht vorhanden leerer Fallback
         if (!roomMemory.isMyRoom) return; // Beendet die Funktion, wenn der Raum nicht mir gehört
@@ -17,10 +17,10 @@ module.exports = {
         // Setzt Mindestanforderungen für Harvester und Hauler
         roomMemory.minHarvesters = sources.length; // Mindestens ein Harvester pro Quelle
         roomMemory.minHaulers = Math.min(3, Math.max(2, Math.ceil(totalContainerEnergy / 1000))); // Hauler basierend auf Containerenergie (2-3)
-        
+
         // Berechnet Mindestanforderungen für Worker
-        let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) + 
-                          (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0); // Zusätzliche Worker bei Baustellen/Reparaturen
+        let extraWorkers = (room.find(FIND_CONSTRUCTION_SITES).length > 0 ? 1 : 0) +
+            (room.find(FIND_STRUCTURES, { filter: s => s.hits < s.hitsMax }).length > 0 ? 1 : 0); // Zusätzliche Worker bei Baustellen/Reparaturen
         let baseWorkers = 2 + extraWorkers + Math.floor(totalContainerEnergy / 500); // Basis-Worker plus Containerenergie
         let storageFillPercentage = storage && storage.store[RESOURCE_ENERGY] > 0 ? (storage.store[RESOURCE_ENERGY] / storage.store.getCapacity(RESOURCE_ENERGY)) : 0; // Füllstand des Storages in Prozent
         let additionalWorkers = storageFillPercentage >= 0.65 ? Math.floor((storageFillPercentage - 0.65) * 40) : 0; // Zusätzliche Worker bei hohem Füllstand
@@ -79,16 +79,16 @@ module.exports = {
         let mineralHarvesters = _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.memory.homeRoom === room.name).length;
 
         // Loggt den aktuellen Status des Raums
-        logger.info('Room ' + room.name + ': Harvesters=' + harvesters + '/' + roomMemory.minHarvesters + 
-                    ', Haulers=' + haulers + '/' + roomMemory.minHaulers + 
-                    ', Workers=' + workers + '/' + roomMemory.minWorkers + 
-                    ', RemoteHarvesters=' + remoteHarvesters + '/' + roomMemory.minRemoteHarvesters + 
-                    ', RemoteHaulers=' + remoteHaulers + '/' + roomMemory.minRemoteHaulers +
-                    ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
-                    ', Reservers=' + reservers + '/' + remoteRooms.length +
-                    ', MineralHarvesters=' + mineralHarvesters + '/' + roomMemory.minMineralHarvesters +
-                    ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy +
-                    ', StorageFill=' + (storageFillPercentage * 100).toFixed(1) + '%');
+        logger.info('Room ' + room.name + ': Harvesters=' + harvesters + '/' + roomMemory.minHarvesters +
+            ', Haulers=' + haulers + '/' + roomMemory.minHaulers +
+            ', Workers=' + workers + '/' + roomMemory.minWorkers +
+            ', RemoteHarvesters=' + remoteHarvesters + '/' + roomMemory.minRemoteHarvesters +
+            ', RemoteHaulers=' + remoteHaulers + '/' + roomMemory.minRemoteHaulers +
+            ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
+            ', Reservers=' + reservers + '/' + remoteRooms.length +
+            ', MineralHarvesters=' + mineralHarvesters + '/' + roomMemory.minMineralHarvesters +
+            ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy +
+            ', StorageFill=' + (storageFillPercentage * 100).toFixed(1) + '%');
 
         // Prüft, ob ein Spawn verfügbar ist
         let spawn = room.find(FIND_MY_SPAWNS)[0];
@@ -150,7 +150,7 @@ module.exports = {
                 let remoteRoomName = remoteRooms[i];
                 let reserversInRoom = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.targetRoom === remoteRoomName);
                 let roomVisible = Game.rooms[remoteRoomName];
-                let needsReserver = !roomVisible || (roomVisible && roomVisible.controller && !roomVisible.controller.my && (!roomVisible.controller.reservation || roomVisible.controller.reservation.ticksToEnd < 5000));
+                let needsReserver = !roomVisible || (roomVisible && roomVisible.controller && !roomVisible.controller.my && (!roomVisible.controller.reservation || roomVisible.controller.reservation.ticksToEnd < 4500));
                 if (needsReserver && (reserversInRoom.length === 0 || (reserversInRoom.length === 1 && reserversInRoom[0].ticksToLive < 60))) {
                     spawnCreeps.spawn(spawn, 'reserver', remoteRoomName, room.name);
                     logger.info(`Spawning new reserver for ${remoteRoomName} in ${room.name}`);
@@ -183,7 +183,7 @@ module.exports = {
             } else {
                 logger.info('No suitable remote room with unassigned sources found');
             }
-        } 
+        }
         // Spawn-Logik für Remote-Hauler (angepasst, um Überspawnen zu verhindern)
         else if (remoteHaulers < roomMemory.minRemoteHaulers && room.energyAvailable >= 300) {
             let targetRoom = null;
@@ -204,13 +204,13 @@ module.exports = {
             } else {
                 logger.info('No suitable remote room needing hauler found');
             }
-        } 
+        }
         // Spawn-Logik für Remote-Worker
         else if (remoteWorkers < roomMemory.minRemoteWorkers && remoteTasksExist && room.energyAvailable >= 200) {
             spawnCreeps.spawn(spawn, 'remoteWorker', targetRoomForWorker, room.name);
             logger.info('Spawning new remoteWorker for ' + targetRoomForWorker + ' in ' + room.name);
             return;
-        } 
+        }
         // Spawn-Logik für Mineral-Harvester mit Mineralgrenze von 15.000
         else if (mineralHarvesters < roomMemory.minMineralHarvesters && room.energyAvailable >= 350) {
             let targetRoom = null;
