@@ -32,21 +32,86 @@ module.exports = {
         const remoteRoomNeeds = {};
         let minRemoteHaulersPerRoom = {}; // Objekt zur Speicherung der Hauler-Anforderungen pro Raum
 
-        // Ermittle die Anzahl der Quellen und Hauler-Bedarf pro Nebenraum
+        // Ermittle die Anzahl der Quellen und Hauler-Bedarf pro Nebenraum basierend auf Entfernung
         remoteRooms.forEach(remoteRoomName => {
             const remoteRoom = Game.rooms[remoteRoomName];
             let sourceCount = 0;
-            if (remoteRoom) {
+            let distance = 50; // Standardwert für Entfernung, falls kein Pfad gefunden wird
+
+            if (remoteRoom && storage) {
+                console.log(`[DEBUG] remoteRoom: ${remoteRoom}, storage: ${storage}`); // Prüft, ob Raum und Storage definiert sind
                 const sources = remoteRoom.find(FIND_SOURCES);
                 sourceCount = sources.length; // Anzahl der Quellen im sichtbaren Remote-Raum
+
+                // Finde Container im Nebenraum
+                const containers = remoteRoom.find(FIND_STRUCTURES, { filter: { structureType: STRUCTURE_CONTAINER } });
+                console.log(`[DEBUG] Containers in ${remoteRoom.name}: ${containers.length}`); // Loggt die Anzahl der Container
+
+                if (containers.length > 0) {
+                    // Finde den Exit vom Nebenraum zum Hauptraum
+                    const exitDir = Game.map.findExit(remoteRoom.name, room.name);
+                    const exitPositions = remoteRoom.find(exitDir);
+
+                    if (exitPositions.length > 0) {
+                        // Nutze die erste Exit-Position als Referenzpunkt
+                        const exitPos = exitPositions[0];
+                        
+                        // Finde den Container im Nebenraum, der am nächsten zum Exit liegt
+                        const closestContainerToExit = exitPos.findClosestByRange(containers);
+
+                        if (closestContainerToExit) {
+                            // Berechne die Entfernung und cache sie, aktualisiere nur alle 100 Ticks
+                            if (!Memory.rooms[remoteRoomName] || !Memory.rooms[remoteRoomName].distance || Game.time % 100 === 0) {
+                                // Schritt 1: Entfernung vom Container zum Exit im Nebenraum
+                                const pathToExit = closestContainerToExit.pos.findPathTo(exitPos);
+                                const distanceToExit = pathToExit.length;
+
+                                // Schritt 2: Entfernung vom Exit im Hauptraum zum Storage
+                                const mainRoomExit = new RoomPosition(exitPos.x, exitPos.y, room.name);
+                                const pathFromExit = mainRoomExit.findPathTo(storage.pos);
+                                const distanceFromExit = pathFromExit.length;
+
+                                // Gesamtentfernung
+                                distance = distanceToExit + distanceFromExit;
+
+                                // Logging zur Überprüfung
+                                console.log(`[DEBUG] Distance to exit: ${distanceToExit}, Distance from exit: ${distanceFromExit}, Total distance: ${distance}`);
+
+                                if (!Memory.rooms[remoteRoomName]) Memory.rooms[remoteRoomName] = {}; // Initialisiert Memory, falls nicht vorhanden
+                                Memory.rooms[remoteRoomName].distance = distance; // Speichere im Memory
+                            } else {
+                                distance = Memory.rooms[remoteRoomName].distance; // Verwende gecachte Entfernung
+                            }
+                        } else {
+                            console.log(`[DEBUG] No container found near exit in ${remoteRoomName}`); // Loggt, wenn kein Container gefunden wird
+                            distance = 50; // Fallback-Wert
+                        }
+                    } else {
+                        console.log(`[DEBUG] No exit found for ${remoteRoomName} to ${room.name}`); // Loggt, wenn kein Exit gefunden wird
+                        distance = 50; // Fallback-Wert
+                    }
+                } else {
+                    console.log(`[DEBUG] No containers found in ${remoteRoomName}`); // Loggt, wenn keine Container vorhanden sind
+                    distance = 50; // Fallback-Wert für unsichtbare Container
+                }
             } else {
-                sourceCount = 2; // Annahme für unsichtbare Räume
+                // Fallback für unsichtbare Räume
+                sourceCount = (remoteRoomName === 'W7N1') ? 2 : 1; // Annahme basierend auf typischen Werten
+                distance = 50; // Standardwert für Entfernung
+                console.log(`[DEBUG] Fallback for ${remoteRoomName}: No visibility or storage`); // Loggt den Fallback-Fall
             }
+
             totalRemoteSources += sourceCount;
             remoteRoomNeeds[remoteRoomName] = sourceCount; // Speichert Bedarf pro Remote-Raum
-            // Setzt die benötigte Anzahl an RemoteHaulern: 2 für 1 Quelle, 3 für 2 Quellen
-            minRemoteHaulersPerRoom[remoteRoomName] = sourceCount === 1 ? 2 : 3;
-            logger.info(`Remote room ${remoteRoomName}: ${sourceCount} sources, requires ${minRemoteHaulersPerRoom[remoteRoomName]} remoteHaulers`);
+
+            // Berechne Hauler-Anzahl: Basis (1 pro Quelle) + zusätzliche basierend auf Quellen und Entfernung
+            const baseHaulers = sourceCount; // Ein Hauler pro Quelle als Basis
+            const additionalHaulers = Math.ceil(sourceCount * (distance / 40)); // Zusätzliche Hauler basierend auf Quellenanzahl und Entfernung
+            const totalHaulers = baseHaulers + additionalHaulers; // Gesamtzahl der Hauler
+            minRemoteHaulersPerRoom[remoteRoomName] = totalHaulers; // Setze die benötigte Anzahl
+
+            // Logging zur Überprüfung
+            logger.info(`Remote room ${remoteRoomName}: ${sourceCount} sources, distance ${distance}, requires ${totalHaulers} remoteHaulers`);
         });
 
         roomMemory.minRemoteHarvesters = Math.min(totalRemoteSources, remoteRooms.length * 2); // Max 2 Harvester pro Remote-Raum
@@ -190,7 +255,7 @@ module.exports = {
             let minHaulerCount = Infinity;
             for (let remoteRoomName of remoteRooms) {
                 const currentHaulers = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.targetRoom === remoteRoomName).length;
-                const requiredHaulers = minRemoteHaulersPerRoom[remoteRoomName]; // 2 bei 1 Quelle, 3 bei 2 Quellen
+                const requiredHaulers = minRemoteHaulersPerRoom[remoteRoomName]; // Dynamisch berechnet
                 logger.info(`Remote room ${remoteRoomName}: ${currentHaulers}/${requiredHaulers} remoteHaulers`); // Debugging
                 if (currentHaulers < requiredHaulers && currentHaulers < minHaulerCount) {
                     targetRoom = remoteRoomName;
