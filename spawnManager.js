@@ -30,6 +30,9 @@ module.exports = {
         let totalRemoteSources = 0;
         const remoteRooms = roomMemory.remoteRooms || []; // Liste der Remote-Räume
         const remoteRoomNeeds = {};
+        let minRemoteHaulersPerRoom = {}; // Objekt zur Speicherung der Hauler-Anforderungen pro Raum
+
+        // Ermittle die Anzahl der Quellen und Hauler-Bedarf pro Nebenraum
         remoteRooms.forEach(remoteRoomName => {
             const remoteRoom = Game.rooms[remoteRoomName];
             let sourceCount = 0;
@@ -41,10 +44,16 @@ module.exports = {
             }
             totalRemoteSources += sourceCount;
             remoteRoomNeeds[remoteRoomName] = sourceCount; // Speichert Bedarf pro Remote-Raum
+            // Setzt die benötigte Anzahl an RemoteHaulern: 2 für 1 Quelle, 3 für 2 Quellen
+            minRemoteHaulersPerRoom[remoteRoomName] = sourceCount === 1 ? 2 : 3;
+            logger.info(`Remote room ${remoteRoomName}: ${sourceCount} sources, requires ${minRemoteHaulersPerRoom[remoteRoomName]} remoteHaulers`);
         });
+
         roomMemory.minRemoteHarvesters = Math.min(totalRemoteSources, remoteRooms.length * 2); // Max 2 Harvester pro Remote-Raum
-        roomMemory.minRemoteHaulers = remoteRooms.length * 2; // 2 Hauler pro Remote-Raum
         roomMemory.minRemoteWorkers = remoteRooms.length; // 1 Worker pro Remote-Raum
+        // Gesamtanzahl der RemoteHauler ist die Summe der Bedarfe aller Nebenräume
+        roomMemory.minRemoteHaulers = _.sum(Object.values(minRemoteHaulersPerRoom));
+        logger.info(`Total minRemoteHaulers for ${room.name}: ${roomMemory.minRemoteHaulers}`);
 
         // Mineral-Harvester-Anforderungen basierend auf verfügbaren Extractoren
         let extractorCount = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_EXTRACTOR }).length; // Extractoren im Hauptraum
@@ -62,7 +71,9 @@ module.exports = {
         let haulers = _.countBy(creeps, 'memory.role').hauler || 0;
         let workers = _.countBy(creeps, 'memory.role').worker || 0;
         let remoteHarvesters = _.filter(Game.creeps, c => c.memory.role === 'remoteHarvester' && c.memory.homeRoom === room.name).length;
-        let remoteHaulers = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.homeRoom === room.name).length;
+        let remoteHaulersList = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.homeRoom === room.name); // Liste für Debugging
+        logger.info(`RemoteHaulers in ${room.name}: ${remoteHaulersList.length} (${remoteHaulersList.map(c => c.name).join(', ')})`); // Loggt alle remoteHauler
+        let remoteHaulers = remoteHaulersList.length; // Gesamtzahl der remoteHauler
         let remoteWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.homeRoom === room.name).length;
         let reservers = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.homeRoom === room.name).length;
         let mineralHarvesters = _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.memory.homeRoom === room.name).length;
@@ -173,15 +184,17 @@ module.exports = {
                 logger.info('No suitable remote room with unassigned sources found');
             }
         } 
-        // Spawn-Logik für Remote-Hauler
+        // Spawn-Logik für Remote-Hauler (angepasst, um Überspawnen zu verhindern)
         else if (remoteHaulers < roomMemory.minRemoteHaulers && room.energyAvailable >= 300) {
             let targetRoom = null;
             let minHaulerCount = Infinity;
             for (let remoteRoomName of remoteRooms) {
                 const currentHaulers = _.filter(Game.creeps, c => c.memory.role === 'remoteHauler' && c.memory.targetRoom === remoteRoomName).length;
-                if (currentHaulers < 2 && currentHaulers < minHaulerCount) {
+                const requiredHaulers = minRemoteHaulersPerRoom[remoteRoomName]; // 2 bei 1 Quelle, 3 bei 2 Quellen
+                logger.info(`Remote room ${remoteRoomName}: ${currentHaulers}/${requiredHaulers} remoteHaulers`); // Debugging
+                if (currentHaulers < requiredHaulers && currentHaulers < minHaulerCount) {
                     targetRoom = remoteRoomName;
-                    minHaulerCount = currentHaulers; // Wählt Raum mit wenigsten Haulern
+                    minHaulerCount = currentHaulers; // Wählt Raum mit wenigsten Haulern unter der Mindestanzahl
                 }
             }
             if (targetRoom) {
