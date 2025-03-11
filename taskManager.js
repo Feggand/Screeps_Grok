@@ -8,7 +8,6 @@ var _ = require('lodash'); // Importiert Lodash für Array-Funktionen
 var taskManager = {
     // Funktion: Erstellt eine Liste von Aufgaben für Worker-Creeps (Arbeitsmodus)
     getWorkerTasks: function (room, cachedData) {
-        if (room.name !== creep.memory.homeRoom) return [];
         let tasks = []; // Liste der Aufgaben
 
         // Reparatur von Wänden und Ramparts mit sehr niedrigen HP
