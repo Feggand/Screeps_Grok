@@ -3,32 +3,40 @@
 // Nutzt gecachte Daten, um CPU-Nutzung zu reduzieren
 // Energiesammeln läuft nun komplett über den Task-Manager mit stärker gewichteten Entfernungsbasierten Prioritäten
 
-var taskManager = require('taskManager');
-var logger = require('logger');
+var taskManager = require('taskManager'); // Importiert den Task-Manager für Aufgabenverwaltung
+var logger = require('logger'); // Importiert das Logging-Modul für Protokollierung
 
 module.exports.run = function(creep, cachedData) {
+    // Bestimmt den Heimatraum des Creeps
+    let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
+
+    // Überprüft, ob der Creep im Heimatraum ist
+    if (creep.room.name !== homeRoom) {
+        // Bewegt sich zurück zum Heimatraum zur Position (25, 25)
+        creep.moveTo(new RoomPosition(25, 25, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
+        logger.info(creep.name + ': Bewegt sich zurück zum Heimatraum ' + homeRoom);
+        return; // Beendet die Ausführung, bis der Creep im Heimatraum ist
+    }
+
     // Aktualisiert den Arbeitsstatus basierend auf der Energie im Creep
     if (creep.store[RESOURCE_ENERGY] === 0) {
         if (creep.memory.working) {
-            creep.memory.working = false;
+            creep.memory.working = false; // Setzt den Arbeitsstatus auf Sammeln
             logger.info(creep.name + ': Wechselt zu Energie sammeln (keine Energie).');
             if (creep.memory.task !== 'idle') {
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+                delete creep.memory.task; // Löscht die aktuelle Aufgabe
+                delete creep.memory.targetId; // Löscht das aktuelle Ziel
             }
         }
     } else if (creep.store.getFreeCapacity() === 0) {
         if (!creep.memory.working) {
-            creep.memory.working = true;
+            creep.memory.working = true; // Setzt den Arbeitsstatus auf Arbeiten
             logger.info(creep.name + ': Wechselt zu Arbeiten (voll mit Energie).');
         }
     } else if (creep.store[RESOURCE_ENERGY] > 0) {
-        creep.memory.working = true;
+        creep.memory.working = true; // Arbeitet, wenn teilweise Energie vorhanden
         logger.info(creep.name + ': Wechselt zu Arbeiten (Teilenergie).');
     }
-
-    // Bestimmt den Heimatraum des Creeps
-    let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
 
     if (creep.memory.working) {
         // Prüft, ob Hauler vorhanden sind
@@ -53,12 +61,12 @@ module.exports.run = function(creep, cachedData) {
 
             if (target) {
                 if (creep.transfer(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Ziel
                     logger.info(creep.name + ': Notfall - Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Liefern');
                 } else {
                     logger.info(creep.name + ': Notfall - Liefert Energie an ' + target.structureType + ' ' + target.id);
                 }
-                return;
+                return; // Beendet die Ausführung nach Notfallaktion
             }
         }
 
@@ -67,11 +75,11 @@ module.exports.run = function(creep, cachedData) {
         let target = Game.getObjectById(creep.memory.targetId);
         if (creep.memory.task && target) {
             if (creep.memory.task === 'repair') {
-                taskValid = target.hits < target.hitsMax;
+                taskValid = target.hits < target.hitsMax; // Reparatur gültig, wenn HP nicht voll
             } else if (creep.memory.task === 'construct') {
-                taskValid = true;
+                taskValid = true; // Baustellen immer gültig
             } else if (creep.memory.task === 'upgrade') {
-                taskValid = true;
+                taskValid = true; // Upgrade immer gültig
             }
             logger.info(creep.name + ': Aufgabe ' + creep.memory.task + ' validiert, gültig: ' + taskValid);
         } else {
@@ -80,8 +88,8 @@ module.exports.run = function(creep, cachedData) {
 
         // Wenn die Aufgabe ungültig ist oder keine Aufgabe existiert, neue zuweisen
         if (!taskValid || !creep.memory.task) {
-            let tasks = taskManager.getWorkerTasks(creep.room, cachedData); // Übergibt cachedData an taskManager
-            taskManager.assignTask(creep, tasks);
+            let tasks = taskManager.getWorkerTasks(creep.room, cachedData); // Holt Aufgaben vom Task-Manager
+            taskManager.assignTask(creep, tasks); // Weist die beste Aufgabe zu
         }
 
         // Führt die zugewiesene Aufgabe aus
@@ -89,22 +97,22 @@ module.exports.run = function(creep, cachedData) {
             let target = Game.getObjectById(creep.memory.targetId);
             if (target && target.hits < target.hitsMax) {
                 if (creep.repair(target) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Ziel
                     logger.info(creep.name + ': Bewegt sich zur Reparatur von ' + target.structureType);
                 } else {
                     logger.info(creep.name + ': Repariert ' + target.structureType);
                 }
             } else {
                 logger.info(creep.name + ': Reparatur-Ziel ungültig oder vollständig repariert');
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+                delete creep.memory.task; // Löscht Aufgabe
+                delete creep.memory.targetId; // Löscht Ziel
             }
         } else if (creep.memory.task === 'construct') {
             let target = Game.getObjectById(creep.memory.targetId);
             if (target) {
                 let result = creep.build(target);
                 if (result === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } });
+                    creep.moveTo(target, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zur Baustelle
                     logger.info(creep.name + ': Bewegt sich zur Baustelle ' + target.id + ' (' + target.structureType + ')');
                 } else if (result === OK) {
                     logger.info(creep.name + ': Baut ' + target.structureType + ' (' + target.id + ')');
@@ -113,35 +121,35 @@ module.exports.run = function(creep, cachedData) {
                 }
             } else {
                 logger.info(creep.name + ': Baustelle ' + creep.memory.targetId + ' nicht gefunden, Aufgabe zurückgesetzt');
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+                delete creep.memory.task; // Löscht Aufgabe
+                delete creep.memory.targetId; // Löscht Ziel
             }
         } else if (creep.memory.task === 'upgrade') {
             let controller = Game.getObjectById(creep.memory.targetId);
             if (controller) {
                 if (creep.upgradeController(controller) === ERR_NOT_IN_RANGE) {
-                    creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } });
+                    creep.moveTo(controller, { visualizePathStyle: { stroke: '#ffffff' } }); // Bewegt sich zum Controller
                     logger.info(creep.name + ': Bewegt sich zum Controller zum Upgraden');
                 } else {
                     logger.info(creep.name + ': Upgraded Controller');
                 }
             } else {
                 logger.info(creep.name + ': Controller nicht gefunden, Aufgabe zurückgesetzt');
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+                delete creep.memory.task; // Löscht Aufgabe
+                delete creep.memory.targetId; // Löscht Ziel
             }
         } else if (creep.memory.task === 'idle') {
             let spawn = null;
             if (cachedData && cachedData.structures) {
                 spawn = creep.pos.findClosestByPath(cachedData.structures, {
-                    filter: s => s.structureType === STRUCTURE_SPAWN
+                    filter: s => s.structureType === STRUCTURE_SPAWN // Sucht nächsten Spawn
                 });
             } else {
                 spawn = creep.pos.findClosestByPath(FIND_MY_SPAWNS);
                 if (cachedData && !cachedData.structures) cachedData.structures = creep.room.find(FIND_STRUCTURES); // Cache Strukturen
             }
             if (spawn) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zum Spawn
                 logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn');
             }
         }
@@ -151,20 +159,20 @@ module.exports.run = function(creep, cachedData) {
         let target = creep.memory.targetId ? Game.getObjectById(creep.memory.targetId) : null;
         if (creep.memory.task === 'collect' && target) {
             if (target instanceof Resource && target.amount > 0) {
-                taskValid = true;
+                taskValid = true; // Gültig, wenn Ressource vorhanden
             } else if (target.store && target.store[RESOURCE_ENERGY] > 0) {
-                taskValid = true;
+                taskValid = true; // Gültig, wenn Energie im Speicher
             }
         }
 
         // Wenn die Aufgabe ungültig ist oder keine Aufgabe existiert, neue zuweisen
         if (!taskValid || creep.memory.task !== 'collect') {
-            let tasks = taskManager.getWorkerCollectTasks(creep, cachedData); // Holt Sammelaufgaben vom Task-Manager mit Entfernungsberechnung
+            let tasks = taskManager.getWorkerCollectTasks(creep, cachedData); // Holt Sammelaufgaben vom Task-Manager
             if (tasks.length > 0) {
-                taskManager.assignTask(creep, tasks);
+                taskManager.assignTask(creep, tasks); // Weist die beste Aufgabe zu
             } else {
-                creep.memory.task = 'idle';
-                creep.memory.targetId = null;
+                creep.memory.task = 'idle'; // Setzt auf Leerlauf
+                creep.memory.targetId = null; // Kein Ziel
                 logger.info(creep.name + ': Keine Sammelaufgaben verfügbar, setze auf idle');
             }
         }
@@ -175,46 +183,46 @@ module.exports.run = function(creep, cachedData) {
             if (target) {
                 if (target instanceof Resource) {
                     if (creep.pickup(target) === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zur Ressource
                         logger.info(creep.name + ': Bewegt sich zu dropped resource ' + target.id);
                     } else if (creep.pickup(target) === OK) {
                         logger.info(creep.name + ': Sammelt dropped resource ' + target.id);
                         if (target.amount === 0) {
-                            delete creep.memory.task;
-                            delete creep.memory.targetId;
+                            delete creep.memory.task; // Löscht Aufgabe
+                            delete creep.memory.targetId; // Löscht Ziel
                         }
                     } else {
                         logger.warn(creep.name + ': Pickup fehlgeschlagen für ' + target.id);
-                        delete creep.memory.task;
-                        delete creep.memory.targetId;
+                        delete creep.memory.task; // Löscht Aufgabe
+                        delete creep.memory.targetId; // Löscht Ziel
                     }
                 } else if (target.store) {
                     if (creep.withdraw(target, RESOURCE_ENERGY) === ERR_NOT_IN_RANGE) {
-                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } });
+                        creep.moveTo(target, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zum Speicher
                         logger.info(creep.name + ': Bewegt sich zu ' + target.structureType + ' ' + target.id + ' zum Sammeln');
                     } else if (creep.withdraw(target, RESOURCE_ENERGY) === OK) {
                         logger.info(creep.name + ': Sammelt Energie aus ' + target.structureType + ' ' + target.id);
                         if (target.store[RESOURCE_ENERGY] === 0) {
-                            delete creep.memory.task;
-                            delete creep.memory.targetId;
+                            delete creep.memory.task; // Löscht Aufgabe
+                            delete creep.memory.targetId; // Löscht Ziel
                         }
                     } else {
                         logger.warn(creep.name + ': Withdraw fehlgeschlagen für ' + target.structureType + ' ' + target.id);
-                        delete creep.memory.task;
-                        delete creep.memory.targetId;
+                        delete creep.memory.task; // Löscht Aufgabe
+                        delete creep.memory.targetId; // Löscht Ziel
                     }
                 }
             } else {
                 logger.info(creep.name + ': Collect-Ziel ungültig, Aufgabe zurückgesetzt');
-                delete creep.memory.task;
-                delete creep.memory.targetId;
+                delete creep.memory.task; // Löscht Aufgabe
+                delete creep.memory.targetId; // Löscht Ziel
             }
         } else if (creep.memory.task === 'idle') {
             let spawn = creep.pos.findClosestByPath((cachedData && cachedData.structures) ?
                 cachedData.structures.filter(s => s.structureType === STRUCTURE_SPAWN) :
-                FIND_MY_SPAWNS);
+                FIND_MY_SPAWNS); // Sucht nächsten Spawn
             if (spawn) {
-                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } });
+                creep.moveTo(spawn, { visualizePathStyle: { stroke: '#ffaa00' } }); // Bewegt sich zum Spawn
                 logger.info(creep.name + ': Keine Aufgaben, bewegt sich zum Spawn');
             }
         }
