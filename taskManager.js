@@ -7,11 +7,12 @@ var _ = require('lodash'); // Importiert Lodash für Array-Funktionen
 
 var taskManager = {
     // Funktion: Erstellt eine Liste von Aufgaben für Worker-Creeps (Arbeitsmodus)
-    getWorkerTasks: function(room, cachedData) {
+    getWorkerTasks: function (room, cachedData) {
+        if (room.name !== creep.memory.homeRoom) return [];
         let tasks = []; // Liste der Aufgaben
 
         // Reparatur von Wänden und Ramparts mit sehr niedrigen HP
-        let damagedWalls = (cachedData && cachedData.structures) ? 
+        let damagedWalls = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003
@@ -25,7 +26,7 @@ var taskManager = {
         });
 
         // Reparatur von Straßen
-        let damagedRoads = (cachedData && cachedData.structures) ? 
+        let damagedRoads = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => structure.structureType === STRUCTURE_ROAD && structure.hits < structure.hitsMax) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => structure.structureType === STRUCTURE_ROAD && structure.hits < structure.hitsMax
@@ -67,22 +68,22 @@ var taskManager = {
     },
 
     // Funktion: Erstellt eine Liste von Aufgaben für Hauler-Creeps
-    getHaulerTasks: function(room, cachedData) {
+    getHaulerTasks: function (room, cachedData) {
         let tasks = []; // Liste der Aufgaben
 
         // Energie liefern an Spawns, Extensions, Türme und Sender-Link
-        let energyTargets = (cachedData && cachedData.structures) ? 
-            cachedData.structures.filter(structure => (structure.structureType === STRUCTURE_SPAWN || 
-                                                    structure.structureType === STRUCTURE_EXTENSION || 
-                                                    structure.structureType === STRUCTURE_TOWER || 
-                                                    (structure.structureType === STRUCTURE_LINK && structure.pos.getRangeTo(room.storage) <= 2)) && 
-                                                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
+        let energyTargets = (cachedData && cachedData.structures) ?
+            cachedData.structures.filter(structure => (structure.structureType === STRUCTURE_SPAWN ||
+                structure.structureType === STRUCTURE_EXTENSION ||
+                structure.structureType === STRUCTURE_TOWER ||
+                (structure.structureType === STRUCTURE_LINK && structure.pos.getRangeTo(room.storage) <= 2)) &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
             room.find(FIND_STRUCTURES, {
-                filter: (structure) => (structure.structureType === STRUCTURE_SPAWN || 
-                                        structure.structureType === STRUCTURE_EXTENSION || 
-                                        structure.structureType === STRUCTURE_TOWER || 
-                                        (structure.structureType === STRUCTURE_LINK && structure.pos.getRangeTo(room.storage) <= 2)) && 
-                                        structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                filter: (structure) => (structure.structureType === STRUCTURE_SPAWN ||
+                    structure.structureType === STRUCTURE_EXTENSION ||
+                    structure.structureType === STRUCTURE_TOWER ||
+                    (structure.structureType === STRUCTURE_LINK && structure.pos.getRangeTo(room.storage) <= 2)) &&
+                    structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             });
         energyTargets.forEach(target => {
             let priority = 0; // Standard-Priorität
@@ -103,10 +104,10 @@ var taskManager = {
         });
 
         // Energie liefern an Controller-Container
-        let controllerContainer = (cachedData && cachedData.structures) ? 
-            cachedData.structures.find(structure => structure.structureType === STRUCTURE_CONTAINER && 
-                                                   structure.pos.getRangeTo(room.controller) <= 3 && 
-                                                   structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
+        let controllerContainer = (cachedData && cachedData.structures) ?
+            cachedData.structures.find(structure => structure.structureType === STRUCTURE_CONTAINER &&
+                structure.pos.getRangeTo(room.controller) <= 3 &&
+                structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
             room.controller.pos.findInRange(FIND_STRUCTURES, 3, {
                 filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
             })[0];
@@ -119,7 +120,7 @@ var taskManager = {
         }
 
         // Energie liefern an Storage
-        let storageDeliver = (cachedData && cachedData.structures) ? 
+        let storageDeliver = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => structure.structureType === STRUCTURE_STORAGE && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => structure.structureType === STRUCTURE_STORAGE && structure.store.getFreeCapacity(RESOURCE_ENERGY) > 0
@@ -133,14 +134,14 @@ var taskManager = {
         });
 
         // Energie sammeln aus Containern (außer Controller-Container)
-        let containers = (cachedData && cachedData.structures) ? 
-            cachedData.structures.filter(structure => structure.structureType === STRUCTURE_CONTAINER && 
-                                                    structure.store[RESOURCE_ENERGY] > 0 && 
-                                                    (!room.controller || structure.pos.getRangeTo(room.controller) > 3)) :
+        let containers = (cachedData && cachedData.structures) ?
+            cachedData.structures.filter(structure => structure.structureType === STRUCTURE_CONTAINER &&
+                structure.store[RESOURCE_ENERGY] > 0 &&
+                (!room.controller || structure.pos.getRangeTo(room.controller) > 3)) :
             room.find(FIND_STRUCTURES, {
-                filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && 
-                                       structure.store[RESOURCE_ENERGY] > 0 && 
-                                       (!room.controller || structure.pos.getRangeTo(room.controller) > 3)
+                filter: (structure) => structure.structureType === STRUCTURE_CONTAINER &&
+                    structure.store[RESOURCE_ENERGY] > 0 &&
+                    (!room.controller || structure.pos.getRangeTo(room.controller) > 3)
             });
         containers.forEach(container => {
             let energyPercentage = container.store[RESOURCE_ENERGY] / container.store.getCapacity(RESOURCE_ENERGY); // Energieanteil im Container
@@ -176,7 +177,7 @@ var taskManager = {
         });
 
         // Energie sammeln aus Storage
-        let storageForCollect = (cachedData && cachedData.structures) ? 
+        let storageForCollect = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => structure.structureType === STRUCTURE_STORAGE && structure.store[RESOURCE_ENERGY] > 0) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => structure.structureType === STRUCTURE_STORAGE && structure.store[RESOURCE_ENERGY] > 0
@@ -195,14 +196,14 @@ var taskManager = {
     },
 
     // Funktion: Erstellt eine Liste von Aufgaben für Harvester-Creeps
-    getHarvesterTasks: function(room, cachedData) {
+    getHarvesterTasks: function (room, cachedData) {
         let tasks = []; // Liste der Aufgaben
         let assignedSources = _.map(_.filter(Game.creeps, c => c.memory.role === 'harvester' && c.memory.task === 'harvest'), 'memory.targetId'); // Bereits zugewiesene Quellen
 
         // Energie ernten von Quellen mit Containern
         let sources = (cachedData && cachedData.sources) || room.find(FIND_SOURCES); // Nutzt cached sources
         sources.forEach(source => {
-            let containers = (cachedData && cachedData.structures) ? 
+            let containers = (cachedData && cachedData.structures) ?
                 cachedData.structures.filter(structure => structure.structureType === STRUCTURE_CONTAINER && structure.pos.inRangeTo(source.pos, 1)) :
                 source.pos.findInRange(FIND_STRUCTURES, 1, {
                     filter: (structure) => structure.structureType === STRUCTURE_CONTAINER
@@ -222,10 +223,10 @@ var taskManager = {
 
         // Container bauen bei Quellen ohne Container
         sources.forEach(source => {
-            let containers = (cachedData && cachedData.structures) ? 
+            let containers = (cachedData && cachedData.structures) ?
                 cachedData.structures.filter(structure => structure.structureType === STRUCTURE_CONTAINER && structure.pos.inRangeTo(source.pos, 1)) :
                 source.pos.findInRange(FIND_STRUCTURES, 1, { filter: (structure) => structure.structureType === STRUCTURE_CONTAINER });
-            let site = (cachedData && cachedData.constructionSites) ? 
+            let site = (cachedData && cachedData.constructionSites) ?
                 cachedData.constructionSites.find(s => s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(source.pos, 1)) :
                 source.pos.findInRange(FIND_CONSTRUCTION_SITES, 1, { filter: (site) => site.structureType === STRUCTURE_CONTAINER })[0];
             if (!containers.length && !site) { // Kein Container/Baustelle
@@ -238,7 +239,7 @@ var taskManager = {
         });
 
         // Reparatur von Containern
-        let containers = (cachedData && cachedData.structures) ? 
+        let containers = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => structure.structureType === STRUCTURE_CONTAINER && structure.hits < structure.hitsMax) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => structure.structureType === STRUCTURE_CONTAINER && structure.hits < structure.hitsMax
@@ -257,7 +258,7 @@ var taskManager = {
     },
 
     // Funktion: Erstellt eine Liste von Aufgaben für Türme
-    getTowerTasks: function(room, cachedData) {
+    getTowerTasks: function (room, cachedData) {
         let tasks = []; // Liste der Aufgaben
 
         // Angriff auf feindliche Creeps
@@ -281,7 +282,7 @@ var taskManager = {
         });
 
         // Reparatur von Straßen und Containern
-        let damagedNonWalls = (cachedData && cachedData.structures) ? 
+        let damagedNonWalls = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => (structure.structureType === STRUCTURE_ROAD || structure.structureType === STRUCTURE_CONTAINER) && structure.hits < structure.hitsMax) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => (structure.structureType === STRUCTURE_ROAD || structure.structureType === STRUCTURE_CONTAINER) && structure.hits < structure.hitsMax
@@ -295,7 +296,7 @@ var taskManager = {
         });
 
         // Reparatur von Wänden und Ramparts mit sehr niedrigen HP
-        let damagedWalls = (cachedData && cachedData.structures) ? 
+        let damagedWalls = (cachedData && cachedData.structures) ?
             cachedData.structures.filter(structure => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003) :
             room.find(FIND_STRUCTURES, {
                 filter: (structure) => (structure.structureType === STRUCTURE_WALL || structure.structureType === STRUCTURE_RAMPART) && structure.hits < structure.hitsMax * 0.0003
@@ -315,7 +316,7 @@ var taskManager = {
 
     // Funktion: Erstellt eine Liste von Sammelaufgaben für Worker-Creeps (Energiesammelmodus)
     // Priorität wird basierend auf Entfernung zum Creep berechnet, Entfernung stärker gewichtet
-    getWorkerCollectTasks: function(creep, cachedData) {
+    getWorkerCollectTasks: function (creep, cachedData) {
         let tasks = []; // Liste der Aufgaben
         let room = creep.room;
 
@@ -411,7 +412,7 @@ var taskManager = {
     },
 
     // Funktion: Weist einem Creep die höchstpriorisierte Aufgabe aus einer Liste zu
-    assignTask: function(creep, tasks) {
+    assignTask: function (creep, tasks) {
         if (tasks.length > 0) { // Wenn Aufgaben verfügbar
             creep.memory.task = tasks[0].type; // Setzt Aufgabentyp
             creep.memory.targetId = tasks[0].target; // Setzt Ziel-ID

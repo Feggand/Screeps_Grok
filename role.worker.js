@@ -6,16 +6,24 @@
 var taskManager = require('taskManager'); // Importiert den Task-Manager für Aufgabenverwaltung
 var logger = require('logger'); // Importiert das Logging-Modul für Protokollierung
 
-module.exports.run = function(creep, cachedData) {
+module.exports.run = function (creep, cachedData) {
     // Bestimmt den Heimatraum des Creeps
     let homeRoom = creep.memory.homeRoom || Memory.rooms[creep.room.name].homeRoom || Object.keys(Game.rooms).find(r => Memory.rooms[r].isMyRoom);
 
-    // Überprüft, ob der Creep im Heimatraum ist
+    // Überprüfe, ob der Creep im Heimatraum ist
     if (creep.room.name !== homeRoom) {
-        // Bewegt sich zurück zum Heimatraum zur Position (25, 25)
-        creep.moveTo(new RoomPosition(25, 25, homeRoom), { visualizePathStyle: { stroke: '#ffaa00' } });
-        logger.info(creep.name + ': Bewegt sich zurück zum Heimatraum ' + homeRoom);
-        return; // Beendet die Ausführung, bis der Creep im Heimatraum ist
+        // Lösche alle aktuellen Aufgaben, um Schleifen zu vermeiden
+        delete creep.memory.task;
+        delete creep.memory.targetId;
+
+        // Bewege dich zurück zum Heimatraum mit optimierten Parametern
+        creep.moveTo(new RoomPosition(25, 25, homeRoom), {
+            visualizePathStyle: { stroke: '#ffaa00' },
+            reusePath: 15,    // Längere Wiederverwendung für Stabilität
+            maxRooms: null    // Erlaube Bewegung über Raumgrenzen hinweg
+        });
+        logger.info(`${creep.name}: Bewegt sich zurück zum Heimatraum ${homeRoom} von ${creep.room.name}`);
+        return; // Beende die Ausführung
     }
 
     // Aktualisiert den Arbeitsstatus basierend auf der Energie im Creep

@@ -1,11 +1,18 @@
 // spawnManager.js
+// Verwaltet das Spawnen von Creeps in einem Raum basierend auf Bedarf und Ressourcen
+
 var spawnCreeps = require('spawnCreeps'); // Importiert das Modul zum Spawnen von Creeps
-var logger = require('logger'); // Importiert das Logging-Modul
+var logger = require('logger'); // Importiert das Logging-Modul für Protokollierung
+var _ = require('lodash'); // Importiert Lodash für Array-Funktionen
 
 module.exports = {
+    /**
+     * Hauptfunktion zur Verwaltung des Spawnens von Creeps im übergebenen Raum
+     * @param {Room} room - Der Raum, in dem das Spawnen verwaltet wird
+     */
     manageSpawns: function (room) {
-        // Verwaltet das Spawnen von Creeps im übergebenen Raum
-        let roomMemory = Memory.rooms[room.name] || {}; // Zugriff auf den Speicher des Raums, falls nicht vorhanden leerer Fallback
+        // Zugriff auf den Speicher des Raums, falls nicht vorhanden leerer Fallback
+        let roomMemory = Memory.rooms[room.name] || {};
         if (!roomMemory.isMyRoom) return; // Beendet die Funktion, wenn der Raum nicht mir gehört
 
         // Ermittelt Container und deren Energie
@@ -142,6 +149,7 @@ module.exports = {
         let remoteWorkers = _.filter(Game.creeps, c => c.memory.role === 'remoteWorker' && c.memory.homeRoom === room.name).length;
         let reservers = _.filter(Game.creeps, c => c.memory.role === 'reserver' && c.memory.homeRoom === room.name).length;
         let mineralHarvesters = _.filter(Game.creeps, c => c.memory.role === 'mineralHarvester' && c.memory.homeRoom === room.name).length;
+        let defenders = _.filter(Game.creeps, c => c.memory.role === 'defender' && c.memory.homeRoom === room.name).length; // Zählt Verteidiger
 
         // Loggt den aktuellen Status des Raums
         logger.info('Room ' + room.name + ': Harvesters=' + harvesters + '/' + roomMemory.minHarvesters +
@@ -152,6 +160,7 @@ module.exports = {
             ', RemoteWorkers=' + remoteWorkers + '/' + roomMemory.minRemoteWorkers +
             ', Reservers=' + reservers + '/' + remoteRooms.length +
             ', MineralHarvesters=' + mineralHarvesters + '/' + roomMemory.minMineralHarvesters +
+            ', Defenders=' + defenders + // Loggt Verteidiger-Anzahl
             ', Energy=' + room.energyAvailable + ', TotalContainerEnergy=' + totalContainerEnergy +
             ', StorageFill=' + (storageFillPercentage * 100).toFixed(1) + '%');
 
@@ -164,7 +173,29 @@ module.exports = {
             return; // Beendet Funktion, wenn kein Spawn verfügbar
         }
 
-        // Notfall-Spawn: Harvester und Hauler haben höchste Priorität
+        // Überprüft, ob Verteidiger benötigt werden
+        let needsDefender = false;
+        let targetRoomForDefender = null;
+        const roomsToCheck = [room.name].concat(roomMemory.remoteRooms || []); // Hauptraum + Nebenräume
+        for (let roomName of roomsToCheck) {
+            const checkRoom = Game.rooms[roomName];
+            if (checkRoom && checkRoom.find(FIND_HOSTILE_CREEPS).length > 0) {
+                needsDefender = true;
+                targetRoomForDefender = roomName; // Raum mit Feinden als Ziel
+                break;
+            }
+        }
+
+        // Spawn-Logik für Verteidiger (höchste Priorität)
+        if (needsDefender && room.energyAvailable >= 300) {
+            if (defenders < 2) { // Maximal 1 Verteidiger pro Raum, anpassbar
+                spawnCreeps.spawn(spawn, 'defender', targetRoomForDefender, room.name);
+                logger.info('Spawning new defender for ' + targetRoomForDefender + ' in ' + room.name + ' (emergency)');
+                return;
+            }
+        }
+
+        // Notfall-Spawn: Harvester und Hauler haben hohe Priorität nach Verteidigern
         if (harvesters < roomMemory.minHarvesters && room.energyAvailable >= 300) {
             spawnCreeps.spawn(spawn, 'harvester', null, room.name);
             logger.info('Spawning new harvester in ' + room.name + ' (emergency)');
